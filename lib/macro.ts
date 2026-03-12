@@ -8,6 +8,11 @@ export interface MacroIndicators {
   vix: number; // VIX 변동성 지수
   fedRate: number; // 미국 기준금리
   buffett: number; // 버핏지수 (시총/GDP 비율)
+
+  // 신규 추가 지표
+  cpi?: number; // 소비자물가지수 (CPI, 전년 대비 %)
+  unemploymentRate?: number; // 실업률 (%)
+  gdpGrowth?: number; // GDP 성장률 (전년 대비 %)
 }
 
 // 재시도 함수
@@ -164,13 +169,115 @@ export async function getBuffettIndicator(): Promise<number> {
   throw new Error("버핏지수 데이터를 가져올 수 없습니다");
 }
 
+// CPI (소비자물가지수) 조회
+export async function getCPI(): Promise<number> {
+  console.log("📊 CPI 조회 중...");
+
+  const apiKey = process.env.FRED_API_KEY;
+
+  if (apiKey && apiKey !== "your_api_key") {
+    try {
+      const response = await fetch(
+        `https://api.stlouisfed.org/fred/series/observations?series_id=CPIAUCSL&api_key=${apiKey}&file_type=json&sort_order=desc&limit=13`,
+        { cache: "no-store" }
+      );
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.observations && data.observations.length >= 13) {
+          // 최근 값과 1년 전 값으로 전년 대비 % 계산
+          const current = parseFloat(data.observations[0].value);
+          const yearAgo = parseFloat(data.observations[12].value);
+          const cpiChange = ((current - yearAgo) / yearAgo) * 100;
+          console.log(`✅ CPI 전년 대비: ${cpiChange.toFixed(1)}%`);
+          return cpiChange;
+        }
+      }
+    } catch (error) {
+      console.warn("⚠️ FRED CPI 조회 실패");
+    }
+  }
+
+  // 폴백: 2026년 예상치
+  const fallbackCPI = 2.5;
+  console.warn(`⚠️ CPI 기본값 사용: ${fallbackCPI}%`);
+  return fallbackCPI;
+}
+
+// 실업률 조회
+export async function getUnemploymentRate(): Promise<number> {
+  console.log("📊 실업률 조회 중...");
+
+  const apiKey = process.env.FRED_API_KEY;
+
+  if (apiKey && apiKey !== "your_api_key") {
+    try {
+      const response = await fetch(
+        `https://api.stlouisfed.org/fred/series/observations?series_id=UNRATE&api_key=${apiKey}&file_type=json&sort_order=desc&limit=1`,
+        { cache: "no-store" }
+      );
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.observations && data.observations.length > 0) {
+          const rate = parseFloat(data.observations[0].value);
+          console.log(`✅ 실업률: ${rate}%`);
+          return rate;
+        }
+      }
+    } catch (error) {
+      console.warn("⚠️ FRED 실업률 조회 실패");
+    }
+  }
+
+  // 폴백: 2026년 예상치
+  const fallbackRate = 3.8;
+  console.warn(`⚠️ 실업률 기본값 사용: ${fallbackRate}%`);
+  return fallbackRate;
+}
+
+// GDP 성장률 조회 (전년 대비 %)
+export async function getGDPGrowth(): Promise<number> {
+  console.log("📊 GDP 성장률 조회 중...");
+
+  const apiKey = process.env.FRED_API_KEY;
+
+  if (apiKey && apiKey !== "your_api_key") {
+    try {
+      const response = await fetch(
+        `https://api.stlouisfed.org/fred/series/observations?series_id=A191RL1Q225SBEA&api_key=${apiKey}&file_type=json&sort_order=desc&limit=1`,
+        { cache: "no-store" }
+      );
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.observations && data.observations.length > 0) {
+          const growth = parseFloat(data.observations[0].value);
+          console.log(`✅ GDP 성장률: ${growth}%`);
+          return growth;
+        }
+      }
+    } catch (error) {
+      console.warn("⚠️ FRED GDP 성장률 조회 실패");
+    }
+  }
+
+  // 폴백: 2026년 예상치
+  const fallbackGrowth = 2.2;
+  console.warn(`⚠️ GDP 성장률 기본값 사용: ${fallbackGrowth}%`);
+  return fallbackGrowth;
+}
+
 // 모든 매크로 지표 일괄 조회
 export async function getAllMacroIndicators(): Promise<MacroIndicators> {
-  const [fearGreed, vix, fedRate, buffett] = await Promise.all([
+  const [fearGreed, vix, fedRate, buffett, cpi, unemploymentRate, gdpGrowth] = await Promise.all([
     getFearGreedIndex(),
     getVIX(),
     getFedRate(),
     getBuffettIndicator(),
+    getCPI().catch(() => 2.5),
+    getUnemploymentRate().catch(() => 3.8),
+    getGDPGrowth().catch(() => 2.2),
   ]);
 
   return {
@@ -178,6 +285,9 @@ export async function getAllMacroIndicators(): Promise<MacroIndicators> {
     vix,
     fedRate,
     buffett,
+    cpi,
+    unemploymentRate,
+    gdpGrowth,
   };
 }
 

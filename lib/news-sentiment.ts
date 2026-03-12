@@ -35,48 +35,60 @@ export async function getNewsSentiment(symbol: string): Promise<NewsSentiment> {
     return cached.data;
   }
 
-  const newsApiKey = process.env.NEWS_API_KEY;
+  const finnhubApiKey = process.env.FINNHUB_API_KEY;
   const geminiApiKey = process.env.GEMINI_API_KEY;
 
-  if (!newsApiKey || newsApiKey === "your_news_api_key") {
-    console.warn("⚠️ NEWS_API_KEY 미설정 - 중립 반환");
+  if (!finnhubApiKey || finnhubApiKey === "your_finnhub_api_key") {
+    console.warn("⚠️ FINNHUB_API_KEY 미설정 - 중립 반환");
     return getDefaultSentiment(symbol);
   }
 
   try {
-    console.log(`📰 ${symbol} 뉴스 수집 중...`);
+    console.log(`📰 ${symbol} 뉴스 수집 중 (Finnhub)...`);
 
-    // 1. NewsAPI에서 뉴스 수집
-    const query = `${symbol} stock OR ${symbol} company`;
-    const url = `https://newsapi.org/v2/everything?q=${encodeURIComponent(query)}&language=en&sortBy=publishedAt&pageSize=5&apiKey=${newsApiKey}`;
+    // 1. Finnhub에서 뉴스 수집
+    const today = new Date();
+    const sevenDaysAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
+
+    const formatDate = (date: Date) => date.toISOString().split('T')[0]; // YYYY-MM-DD
+    const from = formatDate(sevenDaysAgo);
+    const to = formatDate(today);
+
+    const url = `https://finnhub.io/api/v1/company-news?symbol=${symbol}&from=${from}&to=${to}&token=${finnhubApiKey}`;
+
+    console.log(`📡 Finnhub API 호출: ${symbol} (${from} ~ ${to})`);
 
     const response = await fetch(url);
     if (!response.ok) {
-      throw new Error(`NewsAPI error: ${response.status}`);
+      const errorText = await response.text();
+      console.error(`❌ Finnhub API error (${response.status}):`, errorText);
+      throw new Error(`Finnhub API error: ${response.status}`);
     }
 
     const data = await response.json();
-    const articles = data.articles || [];
 
-    if (articles.length === 0) {
+    if (!Array.isArray(data) || data.length === 0) {
+      console.warn(`⚠️ ${symbol} 뉴스 없음`);
       return getDefaultSentiment(symbol);
     }
+
+    console.log(`✅ Finnhub에서 ${data.length}개 뉴스 수집`);
 
     // 2. Gemini로 감성 분석
     const analyzedArticles: NewsArticle[] = [];
 
-    for (const article of articles.slice(0, 5)) {
+    for (const article of data.slice(0, 5)) {
       const sentiment = await analyzeSentimentWithGemini(
-        article.title + " " + (article.description || ""),
+        article.headline + " " + (article.summary || ""),
         geminiApiKey
       );
 
       analyzedArticles.push({
-        title: article.title,
-        description: article.description || "",
+        title: article.headline,
+        description: article.summary || "",
         url: article.url,
-        publishedAt: article.publishedAt,
-        source: article.source?.name || "Unknown",
+        publishedAt: new Date(article.datetime * 1000).toISOString(), // Unix timestamp to ISO
+        source: article.source || "Unknown",
         sentiment: sentiment.label,
         sentimentScore: sentiment.score,
       });
@@ -127,7 +139,7 @@ async function analyzeSentimentWithGemini(
 
   try {
     const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${apiKey}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },

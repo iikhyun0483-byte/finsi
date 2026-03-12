@@ -1,10 +1,22 @@
+@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;700;900&family=IBM+Plex+Mono:wght@300;400;500&family=Noto+Sans+KR:wght@300;400;500;700&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 :root {
-  --background: #080810;
-  --foreground: #e2e8f0;
+  --bg-primary: #000a06;
+  --nexus-teal: #00FFD1;
+  --matrix-green: #00FF41;
+  --warning: #FFD700;
+  --profit: #00FF88;
+  --loss: #FF4466;
+  --card-bg: rgba(0, 15, 12, 0.75);
+  --border: rgba(0, 255, 180, 0.12);
+  --border-active: rgba(0, 255, 180, 0.5);
+  --text-primary: #ffffff;
+  --text-secondary: rgba(255, 255, 255, 0.7);
+  --text-muted: rgba(255, 255, 255, 0.4);
 }
 
 * {
@@ -14,34 +26,735 @@
 }
 
 body {
-  color: var(--foreground);
-  background: var(--background);
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  color: var(--text-primary);
+  background: var(--bg-primary);
+  font-family: 'Noto Sans KR', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  position: relative;
+  overflow-x: hidden;
 }
 
-@layer utilities {
-  .text-balance {
-    text-wrap: balance;
+/* NEXUS Energy Grid Background */
+body::before {
+  content: '';
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-image:
+    linear-gradient(rgba(0, 255, 180, 0.02) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 255, 180, 0.02) 1px, transparent 1px);
+  background-size: 30px 30px;
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* NEXUS Core Glow */
+body::after {
+  content: '';
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 1200px;
+  height: 1200px;
+  background: radial-gradient(
+    circle,
+    rgba(0, 255, 180, 0.08) 0%,
+    rgba(0, 255, 65, 0.05) 30%,
+    transparent 70%
+  );
+  pointer-events: none;
+  z-index: 0;
+  animation: core-pulse 8s ease-in-out infinite;
+}
+
+@keyframes core-pulse {
+  0%, 100% {
+    opacity: 0.5;
+    transform: translate(-50%, -50%) scale(1);
+  }
+  50% {
+    opacity: 0.8;
+    transform: translate(-50%, -50%) scale(1.1);
   }
 }
 
-/* Custom scrollbar */
+/* Scanline Animation - DISABLED (no falling rain) */
+.scanline {
+  display: none;
+}
+
+/* Font Classes */
+.font-orbitron {
+  font-family: 'Orbitron', sans-serif;
+}
+
+.font-noto {
+  font-family: 'Noto Sans KR', sans-serif;
+}
+
+.font-mono {
+  font-family: 'IBM Plex Mono', monospace;
+}
+
+/* NEXUS Card */
+.jarvis-card {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  backdrop-filter: blur(16px);
+  position: relative;
+  overflow: hidden;
+}
+
+/* Card Corner Decorations - 16px */
+.jarvis-card::before,
+.jarvis-card::after {
+  content: '';
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  border: 2px solid var(--nexus-teal);
+  pointer-events: none;
+  z-index: 1;
+}
+
+.jarvis-card::before {
+  top: -1px;
+  left: -1px;
+  border-right: none;
+  border-bottom: none;
+  box-shadow: 0 0 10px rgba(0, 255, 209, 0.5);
+}
+
+.jarvis-card::after {
+  top: -1px;
+  right: -1px;
+  border-left: none;
+  border-bottom: none;
+  box-shadow: 0 0 10px rgba(0, 255, 209, 0.5);
+}
+
+/* Bottom corners via pseudo on wrapper */
+.jarvis-card:hover::before,
+.jarvis-card:hover::after {
+  border-color: var(--matrix-green);
+  box-shadow: 0 0 15px rgba(0, 255, 65, 0.7);
+}
+
+/* NEXUS Scanline Effect */
+@keyframes nexus-scan {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(200%);
+  }
+}
+
+.jarvis-card:hover::after {
+  animation: nexus-scan 2s ease-in-out infinite;
+}
+
+/* Glow Effect */
+@keyframes glow {
+  0%, 100% {
+    box-shadow: 0 0 5px rgba(0, 255, 180, 0.3),
+                0 0 10px rgba(0, 255, 180, 0.2);
+  }
+  50% {
+    box-shadow: 0 0 15px rgba(0, 255, 180, 0.5),
+                0 0 25px rgba(0, 255, 65, 0.3);
+  }
+}
+
+.glow-cyan {
+  animation: glow 3s ease-in-out infinite;
+}
+
+/* Pulse Animation */
+@keyframes pulse-cyan {
+  0%, 100% {
+    border-color: rgba(0, 255, 180, 0.12);
+  }
+  50% {
+    border-color: rgba(0, 255, 180, 0.5);
+  }
+}
+
+.pulse-border {
+  animation: pulse-cyan 2s ease-in-out infinite;
+}
+
+/* Custom Scrollbar - NEXUS Style */
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #0a0e1a;
+  background: rgba(0, 15, 12, 0.3);
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #1e3a5f;
+  background: rgba(0, 255, 180, 0.3);
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #2a4a6f;
+  background: rgba(0, 255, 180, 0.5);
+}
+
+/* Button Styles */
+.jarvis-button {
+  background: linear-gradient(135deg, rgba(0, 255, 180, 0.1), rgba(0, 255, 65, 0.05));
+  border: 1px solid var(--border);
+  color: var(--nexus-teal);
+  font-family: 'Orbitron', sans-serif;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  transition: all 0.3s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.jarvis-button:hover:not(:disabled) {
+  border-color: var(--border-active);
+  background: linear-gradient(135deg, rgba(0, 255, 180, 0.2), rgba(0, 255, 65, 0.1));
+  box-shadow: 0 0 20px rgba(0, 255, 180, 0.4);
+  color: var(--matrix-green);
+}
+
+.jarvis-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Input Styles */
+.jarvis-input {
+  background: rgba(0, 15, 12, 0.6);
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+  font-family: 'Orbitron', monospace;
+  border-radius: 4px;
+  backdrop-filter: blur(8px);
+  transition: all 0.3s ease;
+}
+
+.jarvis-input:focus {
+  outline: none;
+  border-color: var(--border-active);
+  box-shadow: 0 0 10px rgba(0, 255, 180, 0.3);
+}
+
+.jarvis-input::placeholder {
+  color: var(--text-muted);
+}
+
+/* Number Display with NEXUS Glow */
+.number-display {
+  font-family: 'Orbitron', sans-serif;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  color: var(--nexus-teal);
+  text-shadow: 0 0 20px rgba(0, 255, 180, 0.8);
+}
+
+/* Label Display */
+.label-display {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--text-muted);
+}
+
+/* Status Colors */
+.status-profit {
+  color: var(--profit);
+  text-shadow: 0 0 15px rgba(0, 255, 136, 0.6);
+}
+
+.status-loss {
+  color: var(--loss);
+  text-shadow: 0 0 15px rgba(255, 68, 102, 0.6);
+}
+
+.status-warning {
+  color: var(--warning);
+  text-shadow: 0 0 15px rgba(255, 215, 0, 0.6);
+}
+
+.status-cyan {
+  color: var(--nexus-teal);
+  text-shadow: 0 0 20px rgba(0, 255, 180, 0.8);
+}
+
+.status-matrix {
+  color: var(--matrix-green);
+  text-shadow: 0 0 20px rgba(0, 255, 65, 0.8);
+}
+
+/* Utility Classes */
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+}
+
+/* Shimmer Effect */
+@keyframes shimmer {
+  0% {
+    background-position: -1000px 0;
+  }
+  100% {
+    background-position: 1000px 0;
+  }
+}
+
+.shimmer {
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(0, 255, 180, 0.15),
+    transparent
+  );
+  background-size: 1000px 100%;
+  animation: shimmer 3s infinite;
+}
+
+/* Data Stream Effect */
+@keyframes data-stream {
+  0% {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  50% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+}
+
+.data-stream {
+  animation: data-stream 2s ease-in-out infinite;
+}
+
+/* Starfield Background */
+@keyframes stars-move {
+  from {
+    transform: translateY(0);
+  }
+  to {
+    transform: translateY(-2000px);
+  }
+}
+
+@keyframes stars-twinkle {
+  0%, 100% {
+    opacity: 0.3;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.stars-layer {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 200%;
+  height: 200%;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.stars-small {
+  background-image:
+    radial-gradient(1px 1px at 20px 30px, rgba(0, 255, 209, 0.8), transparent),
+    radial-gradient(1px 1px at 60px 70px, rgba(0, 255, 65, 0.6), transparent),
+    radial-gradient(1px 1px at 100px 50px, rgba(255, 255, 255, 0.7), transparent),
+    radial-gradient(1px 1px at 130px 110px, rgba(0, 255, 180, 0.5), transparent),
+    radial-gradient(1px 1px at 180px 90px, rgba(0, 255, 209, 0.6), transparent);
+  background-size: 200px 200px;
+  background-repeat: repeat;
+  animation: stars-move 200s linear infinite, stars-twinkle 3s ease-in-out infinite;
+}
+
+.stars-medium {
+  background-image:
+    radial-gradient(1.5px 1.5px at 40px 80px, rgba(0, 255, 209, 0.9), transparent),
+    radial-gradient(1.5px 1.5px at 120px 140px, rgba(0, 255, 65, 0.7), transparent),
+    radial-gradient(1.5px 1.5px at 160px 60px, rgba(255, 255, 255, 0.8), transparent);
+  background-size: 200px 200px;
+  background-repeat: repeat;
+  animation: stars-move 150s linear infinite, stars-twinkle 5s ease-in-out infinite;
+}
+
+.stars-large {
+  background-image:
+    radial-gradient(2px 2px at 80px 120px, rgba(0, 255, 180, 1), transparent),
+    radial-gradient(2px 2px at 150px 40px, rgba(0, 255, 65, 0.8), transparent);
+  background-size: 200px 200px;
+  background-repeat: repeat;
+  animation: stars-move 100s linear infinite, stars-twinkle 7s ease-in-out infinite;
+}
+
+/* Logo Rotation Animation */
+@keyframes logo-rotate {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+.logo-spin {
+  animation: logo-rotate 20s linear infinite;
+}
+
+/* NEXUS Gradient Text */
+.nexus-gradient-text {
+  background: linear-gradient(135deg, #00FF41, #00FFD1, #00AAFF);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* NEXUS Glitch Effect */
+@keyframes nexus-glitch {
+  0%, 93%, 100% {
+    clip-path: none;
+    transform: none;
+  }
+  94% {
+    clip-path: inset(15% 0 70% 0);
+    transform: translate(-3px, 0);
+    color: var(--matrix-green);
+  }
+  95% {
+    clip-path: inset(70% 0 5% 0);
+    transform: translate(3px, 0);
+    color: #00AAFF;
+  }
+  96% {
+    clip-path: none;
+    transform: none;
+  }
+  97% {
+    clip-path: inset(45% 0 45% 0);
+    transform: translate(-1px, 0);
+  }
+  98% {
+    clip-path: none;
+  }
+}
+
+.nexus-glitch {
+  animation: nexus-glitch 10s infinite;
+}
+
+/* NEXUS Logo Text Glow */
+@keyframes nexus-logo-glow {
+  from {
+    filter: drop-shadow(0 0 10px rgba(0, 255, 180, 0.6));
+  }
+  to {
+    filter: drop-shadow(0 0 25px rgba(0, 255, 180, 1)) drop-shadow(0 0 50px rgba(0, 200, 255, 0.4));
+  }
+}
+
+.logo-glow {
+  animation: nexus-logo-glow 3s ease-in-out infinite alternate;
+}
+
+/* NEXUS Orb Number Pulse */
+@keyframes orb-pulse {
+  from {
+    filter: drop-shadow(0 0 10px rgba(0, 255, 180, 0.6));
+  }
+  to {
+    filter: drop-shadow(0 0 30px rgba(0, 255, 180, 1));
+  }
+}
+
+.orb-pulse {
+  animation: orb-pulse 2s ease-in-out infinite alternate;
+}
+
+/* NEXUS Gold Flare (for status text) */
+@keyframes gold-flare {
+  from {
+    text-shadow: 0 0 15px rgba(255, 215, 0, 0.5);
+  }
+  to {
+    text-shadow: 0 0 35px rgba(255, 215, 0, 1), 0 0 60px rgba(255, 215, 0, 0.3);
+  }
+}
+
+.gold-flare {
+  animation: gold-flare 2s ease-in-out infinite alternate;
+}
+
+/* NEXUS Matrix Scan Line */
+@keyframes matrix-scan {
+  0% {
+    top: 0;
+    opacity: 0;
+  }
+  5% {
+    opacity: 0.8;
+  }
+  95% {
+    opacity: 0.3;
+  }
+  100% {
+    top: 100%;
+    opacity: 0;
+  }
+}
+
+.matrix-scan {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--matrix-green), var(--nexus-teal), transparent);
+  animation: matrix-scan 5s linear infinite;
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+/* NEXUS Label Style (like HTML) */
+.nexus-label {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.5rem;
+  color: rgba(0, 255, 180, 0.35);
+  letter-spacing: 4px;
+  text-transform: uppercase;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.nexus-label::before {
+  content: '▸';
+  color: var(--nexus-teal);
+}
+
+/* NEXUS Number Display (Orbitron + Heavy Weight) */
+.nexus-number {
+  font-family: 'Orbitron', sans-serif;
+  font-weight: 900;
+  letter-spacing: 2px;
+}
+
+/* NEXUS Small Label */
+.nexus-small-label {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.46rem;
+  color: rgba(0, 255, 180, 0.25);
+  letter-spacing: 2px;
+  text-transform: uppercase;
+}
+
+/* NEXUS Mono Text */
+.nexus-mono {
+  font-family: 'IBM Plex Mono', monospace;
+  font-weight: 400;
+}
+
+/* ==================== 역동적 비주얼 애니메이션 ==================== */
+
+/* 카드 진입 애니메이션 */
+@keyframes card-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.card-fade-in {
+  animation: card-fade-in 0.6s ease-out forwards;
+}
+
+/* 스태거 지연 */
+.stagger-1 { animation-delay: 0.1s; }
+.stagger-2 { animation-delay: 0.2s; }
+.stagger-3 { animation-delay: 0.3s; }
+.stagger-4 { animation-delay: 0.4s; }
+
+/* 펄스 애니메이션 */
+@keyframes pulse-glow {
+  0%, 100% {
+    box-shadow: 0 0 10px rgba(0, 255, 180, 0.3);
+  }
+  50% {
+    box-shadow: 0 0 25px rgba(0, 255, 180, 0.7), 0 0 40px rgba(0, 255, 180, 0.4);
+  }
+}
+
+.pulse-glow {
+  animation: pulse-glow 2s ease-in-out infinite;
+}
+
+/* 에너지 웨이브 바 */
+@keyframes energy-wave {
+  0%, 100% {
+    transform: scaleY(1);
+  }
+  50% {
+    transform: scaleY(1.3);
+  }
+}
+
+.energy-wave {
+  animation: energy-wave 1.5s ease-in-out infinite;
+  transform-origin: bottom;
+}
+
+/* 리플 효과 */
+@keyframes ripple {
+  0% {
+    transform: scale(0);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(4);
+    opacity: 0;
+  }
+}
+
+.ripple {
+  position: absolute;
+  border-radius: 50%;
+  background: rgba(0, 255, 180, 0.5);
+  pointer-events: none;
+  animation: ripple 0.6s ease-out;
+}
+
+/* 회전 게이지 */
+@keyframes rotate-gauge {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.rotate-gauge {
+  animation: rotate-gauge 3s linear infinite;
+}
+
+/* 타이핑 커서 */
+@keyframes typing-cursor {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0;
+  }
+}
+
+.typing-cursor {
+  animation: typing-cursor 1s step-end infinite;
+}
+
+/* 호버 글로우 강화 */
+.hover-glow-enhanced {
+  transition: all 0.3s ease;
+  will-change: transform, box-shadow;
+}
+
+.hover-glow-enhanced:hover {
+  transform: translateY(-2px);
+  box-shadow: 
+    0 0 30px rgba(0, 255, 180, 0.5),
+    0 0 60px rgba(0, 255, 180, 0.3),
+    0 10px 40px rgba(0, 0, 0, 0.5);
+}
+
+/* 3D 깊이감 */
+.depth-3d {
+  box-shadow:
+    0 1px 0 rgba(0, 255, 180, 0.2),
+    0 2px 0 rgba(0, 255, 180, 0.15),
+    0 4px 0 rgba(0, 255, 180, 0.1),
+    0 8px 20px rgba(0, 0, 0, 0.5);
+}
+
+/* 숫자 글로우 */
+.number-glow {
+  text-shadow: 
+    0 0 10px currentColor,
+    0 0 20px currentColor,
+    0 0 30px currentColor;
+}
+
+/* 데이터 스트림 라인 */
+@keyframes data-flow {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(200%);
+  }
+}
+
+.data-flow {
+  animation: data-flow 3s linear infinite;
+}
+
+/* 성능 최적화 */
+.will-change-transform {
+  will-change: transform;
+}
+
+.will-change-opacity {
+  will-change: opacity;
+}
+
+/* 육각형 그리드 애니메이션 */
+@keyframes hex-pulse {
+  0%, 100% {
+    opacity: 0.1;
+  }
+  50% {
+    opacity: 0.3;
+  }
+}
+
+.hex-grid {
+  background-image: 
+    radial-gradient(circle at 50% 50%, rgba(0, 255, 180, 0.05) 0%, transparent 50%);
+  background-size: 60px 60px;
+  animation: hex-pulse 4s ease-in-out infinite;
+}
+
+/* 스파크 효과 */
+@keyframes spark {
+  0% {
+    transform: scale(0) rotate(0deg);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1) rotate(180deg);
+    opacity: 0;
+  }
+}
+
+.spark {
+  animation: spark 0.8s ease-out;
 }

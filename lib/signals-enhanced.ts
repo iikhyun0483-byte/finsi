@@ -13,6 +13,7 @@ export interface SignalInput {
   name: string;
   assetType: "stock" | "crypto" | "commodity" | "bond" | "reit";
   prices: number[];
+  volumes?: number[]; // 거래량 (선택)
   macroIndicators: MacroIndicators;
 }
 
@@ -41,6 +42,14 @@ export interface SignalOutputEnhanced {
   correlationAdjustment?: number; // 상관관계 조정값
   leadingIndicators?: LeadingIndicatorScore; // 선행 지표
   leadingScore?: number; // 선행 지표 점수
+
+  // 신규 신호 (7가지 기능 추가)
+  goldenCross?: boolean;
+  deadCross?: boolean;
+  volumeSpike?: boolean;
+  week52High?: boolean;
+  week52Low?: boolean;
+  bollingerRSI?: 'oversold' | 'overbought' | 'neutral';
 }
 
 // Layer 1: 기술적 지표 (30%)
@@ -189,6 +198,77 @@ function applyCorrelationAdjustment(
   return Math.round(adjustment);
 }
 
+// ============ 신호 감지 함수들 (signals.ts에서 복사) ============
+
+// 골든크로스/데드크로스 감지
+function detectCrossover(prices: number[]): { goldenCross: boolean; deadCross: boolean } {
+  if (prices.length < 200) return { goldenCross: false, deadCross: false };
+
+  const sma50 = calcSMA(prices, 50);
+  const sma200 = calcSMA(prices, 200);
+
+  const currentSMA50 = sma50[sma50.length - 1];
+  const previousSMA50 = sma50[sma50.length - 2];
+  const currentSMA200 = sma200[sma200.length - 1];
+  const previousSMA200 = sma200[sma200.length - 2];
+
+  if (!currentSMA50 || !previousSMA50 || !currentSMA200 || !previousSMA200) {
+    return { goldenCross: false, deadCross: false };
+  }
+
+  const goldenCross = previousSMA50 < previousSMA200 && currentSMA50 > currentSMA200;
+  const deadCross = previousSMA50 > previousSMA200 && currentSMA50 < currentSMA200;
+
+  return { goldenCross, deadCross };
+}
+
+// 거래량 급증 감지
+function detectVolumeSpike(volumes: number[] | undefined): boolean {
+  if (!volumes || volumes.length < 21) return false;
+
+  const currentVolume = volumes[volumes.length - 1];
+  const avgVolume = volumes.slice(-21, -1).reduce((a, b) => a + b, 0) / 20;
+
+  return currentVolume >= avgVolume * 2;
+}
+
+// 52주 신고가/신저가 감지
+function detect52WeekHighLow(prices: number[]): { week52High: boolean; week52Low: boolean } {
+  if (prices.length < 252) return { week52High: false, week52Low: false };
+
+  const recent52Weeks = prices.slice(-252);
+  const currentPrice = prices[prices.length - 1];
+  const max = Math.max(...recent52Weeks);
+  const min = Math.min(...recent52Weeks);
+
+  return {
+    week52High: currentPrice >= max * 0.999,
+    week52Low: currentPrice <= min * 1.001,
+  };
+}
+
+// 볼린저밴드 + RSI 복합 신호
+function detectBollingerRSI(prices: number[]): 'oversold' | 'overbought' | 'neutral' {
+  const bollinger = calcBollinger(prices, 20, 2);
+  const rsiValues = calcRSI(prices, 14);
+
+  const currentPrice = prices[prices.length - 1];
+  const currentBand = bollinger[bollinger.length - 1];
+  const rsi = rsiValues[rsiValues.length - 1];
+
+  if (currentBand.lower && currentPrice < currentBand.lower && rsi !== null && rsi < 30) {
+    return 'oversold';
+  }
+
+  if (currentBand.upper && currentPrice > currentBand.upper && rsi !== null && rsi > 70) {
+    return 'overbought';
+  }
+
+  return 'neutral';
+}
+
+// ============================================
+
 // 메인 신호 생성 함수 (Enhanced)
 export async function generateSignalEnhanced(
   input: SignalInput,
@@ -302,6 +382,12 @@ export async function generateSignalEnhanced(
   if (finalScore >= 70) action = "강력 매수";
   else if (finalScore >= 55) action = "매수";
 
+  // 신규 신호 감지
+  const crossover = detectCrossover(prices);
+  const volumeSpike = detectVolumeSpike(input.volumes);
+  const week52 = detect52WeekHighLow(prices);
+  const bollingerRSI = detectBollingerRSI(prices);
+
   return {
     symbol,
     name,
@@ -325,6 +411,14 @@ export async function generateSignalEnhanced(
     correlationAdjustment: correlationAdj,
     leadingIndicators,
     leadingScore,
+
+    // 신규 신호들
+    goldenCross: crossover.goldenCross,
+    deadCross: crossover.deadCross,
+    volumeSpike,
+    week52High: week52.week52High,
+    week52Low: week52.week52Low,
+    bollingerRSI,
   };
 }
 

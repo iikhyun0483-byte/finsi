@@ -1,32 +1,101 @@
 "use client";
 
-import { useState } from "react";
-import { Card, CardHeader, CardTitle, CardContent } from "@/components/common/Card";
+import { useState, useEffect } from "react";
+import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/common/Card";
 import { Button } from "@/components/common/Button";
 import { ScoreMeter } from "@/components/beginner/ScoreMeter";
 import { RSIGauge } from "@/components/beginner/RSIGauge";
+import { KOREAN_STOCKS, CATEGORIES, getStocksByCategory } from "@/lib/korean-stocks";
+import { getAssetDisplayName, getIndicatorLabel, formatPriceWithKRW, formatPercent } from "@/lib/design-system";
+import { TrendingUp, TrendingDown, Activity, DollarSign, Globe, Coins, ChevronRight } from "lucide-react";
+import { ParticleBackground } from "@/components/effects/ParticleBackground";
+import { CountUp } from "@/components/effects/CountUp";
+import { TypingEffect } from "@/components/effects/TypingEffect";
+import { calcIntegratedScore } from "@/lib/score-engine";
+import { calcKellyPosition } from "@/lib/kelly";
+import { applyVixFilter } from "@/lib/vix-filter";
+import { ScoreGauge } from "@/components/ScoreGauge";
+import { KellyCard } from "@/components/KellyCard";
+import {
+  safeNum,
+  rsiToScore,
+  macdToScore,
+  bbToScore,
+  buffettToScore,
+  rateToScore,
+} from "@/lib/score-helpers";
+
+type MarketType = 'global' | 'crypto' | 'korean';
 
 export default function AnalyzePage() {
+  const [marketType, setMarketType] = useState<MarketType>('global');
   const [symbol, setSymbol] = useState("");
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
+  const [aiComment, setAiComment] = useState<string | null>(null);
+  const [loadingAI, setLoadingAI] = useState(false);
+  const [macro, setMacro] = useState<any>(null);
+
+  // 한국주식 전용
+  const [koreanCategory, setKoreanCategory] = useState(CATEGORIES[0]);
+  const [koreanCode, setKoreanCode] = useState("");
+
+  const handleMarketChange = (type: MarketType) => {
+    setMarketType(type);
+    setSymbol("");
+    setKoreanCode("");
+    setResult(null);
+    setError(null);
+  };
 
   const handleAnalyze = async () => {
-    if (!symbol) return;
+    const targetSymbol = marketType === 'korean' ? koreanCode : symbol;
+
+    if (!targetSymbol) return;
 
     setLoading(true);
     setError(null);
     setResult(null);
 
     try {
-      const response = await fetch(`/api/analyze?symbol=${symbol.toUpperCase()}`);
-      const data = await response.json();
+      if (marketType === 'korean') {
+        // 한국 주식은 /api/korean-stocks 사용
+        const response = await fetch(`/api/korean-stocks?code=${koreanCode}`);
+        const data = await response.json();
 
-      if (data.success) {
-        setResult(data.signal);
+        if (data.error) {
+          setError(data.error);
+        } else {
+          // 한국 주식용 간단한 결과 표시
+          setResult({
+            symbol: koreanCode,
+            name: data.name,
+            price: data.price,
+            change: data.change,
+            changePercent: data.changePercent,
+            volume: data.volume,
+            per: data.per,
+            pbr: data.pbr,
+            market: data.market,
+            category: data.category,
+            isKorean: true,
+          });
+        }
       } else {
-        setError(data.error || "분석에 실패했습니다");
+        // 해외주식/암호화폐는 기존 /api/analyze 사용
+        const response = await fetch(`/api/analyze?symbol=${symbol.toUpperCase()}`);
+        const data = await response.json();
+
+        if (data.success) {
+          setResult(data.signal);
+          setMacro(data.macroIndicators || null);
+
+          // AI 코멘트 생성 (비동기)
+          generateAIComment(data.signal, data.macroIndicators);
+        } else {
+          setError(data.error || "분석에 실패했습니다");
+        }
       }
     } catch (err) {
       console.error("Analysis failed:", err);
@@ -36,36 +105,201 @@ export default function AnalyzePage() {
     }
   };
 
+  // AI 코멘트 생성 함수
+  const generateAIComment = async (signal: any, macro: any) => {
+    setLoadingAI(true);
+    setAiComment(null);
+
+    try {
+      console.log('🤖 AI 코멘트 요청 중...', signal.symbol);
+
+      const response = await fetch('/api/ai-comment', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          symbol: signal.symbol,
+          score: signal.score,
+          rsi: signal.rsi,
+          macd: signal.macd,
+          price: signal.price,
+          fearGreed: macro?.fearGreed || 50,
+          vix: macro?.vix || 15,
+          fedRate: macro?.fedRate || 3,
+          goldenCross: signal.goldenCross,
+          deadCross: signal.deadCross,
+          week52High: signal.week52High,
+          week52Low: signal.week52Low,
+        }),
+      });
+
+      console.log('📡 AI 코멘트 응답 상태:', response.status, response.statusText);
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('❌ AI 코멘트 API 에러:', errorText);
+        throw new Error(`AI 코멘트 API 에러 (${response.status})`);
+      }
+
+      const contentType = response.headers.get('content-type');
+      if (!contentType || !contentType.includes('application/json')) {
+        const text = await response.text();
+        console.error('❌ JSON이 아닌 응답:', text.substring(0, 200));
+        throw new Error('서버가 JSON이 아닌 응답을 반환했습니다');
+      }
+
+      const data = await response.json();
+      console.log('✅ AI 코멘트 응답:', data);
+
+      if (data.success) {
+        setAiComment(data.comment);
+        console.log('✅ AI 코멘트 설정 완료');
+      } else {
+        console.error('❌ AI 코멘트 생성 실패:', data.error);
+        setAiComment(`AI 코멘트 생성 실패: ${data.error || '알 수 없는 오류'}`);
+      }
+    } catch (err: any) {
+      console.error('❌ AI comment failed:', err);
+      console.error('에러 메시지:', err.message);
+      setAiComment(`AI 코멘트 오류: ${err.message}`);
+    } finally {
+      setLoadingAI(false);
+    }
+  };
+
   return (
-    <div className="min-h-screen bg-[#080810] text-white">
-      <header className="border-b border-gray-800 bg-gradient-to-r from-[#0d1321] to-[#0f1e35]">
-        <div className="mx-auto max-w-7xl px-6 py-4">
-          <div className="text-xs tracking-[4px] text-blue-400 mb-1">ASSET ANALYSIS</div>
-          <h1 className="text-2xl font-bold">📊 종목 분석</h1>
+    <div className="min-h-screen bg-[#000810] text-white relative">
+      {/* Particle Background */}
+      <ParticleBackground />
+
+      {/* Starfield Background */}
+      <div className="stars-layer stars-small" />
+      <div className="stars-layer stars-medium" />
+      <div className="stars-layer stars-large" />
+
+      {/* Grid Background */}
+
+      <header className="border-b border-[rgba(0,212,255,0.12)] bg-[rgba(0,20,45,0.3)] backdrop-blur-xl">
+        <div className="mx-auto max-w-7xl px-6 py-5">
+          <div className="flex items-center gap-3">
+            <Activity className="w-8 h-8 text-[#00d4ff]" />
+            <div>
+              <div className="font-mono text-xs tracking-[3px] text-[rgba(0,212,255,0.7)] mb-1">
+                J.A.R.V.I.S ASSET ANALYZER
+              </div>
+              <h1 className="font-orbitron text-2xl font-bold text-[#00d4ff] tracking-wide">
+                종목 분석 시스템
+              </h1>
+            </div>
+          </div>
         </div>
       </header>
 
       <main className="mx-auto max-w-7xl px-6 py-8">
+        {/* 마켓 타입 탭 */}
+        <div className="mb-8 flex gap-3 border-b border-[rgba(0,212,255,0.12)] pb-2">
+          <button
+            onClick={() => handleMarketChange('global')}
+            className={`px-6 py-3 font-orbitron font-semibold transition-all flex items-center gap-2 ${
+              marketType === 'global'
+                ? 'border-b-2 border-[#00d4ff] text-[#00d4ff]'
+                : 'border-b-2 border-transparent text-[rgba(255,255,255,0.4)] hover:text-[#00d4ff]'
+            }`}
+          >
+            <Globe className="w-4 h-4" />
+            <span>GLOBAL</span>
+          </button>
+          <button
+            onClick={() => handleMarketChange('crypto')}
+            className={`px-6 py-3 font-orbitron font-semibold transition-all flex items-center gap-2 ${
+              marketType === 'crypto'
+                ? 'border-b-2 border-[#00d4ff] text-[#00d4ff]'
+                : 'border-b-2 border-transparent text-[rgba(255,255,255,0.4)] hover:text-[#00d4ff]'
+            }`}
+          >
+            <Coins className="w-4 h-4" />
+            <span>CRYPTO</span>
+          </button>
+          <button
+            onClick={() => handleMarketChange('korean')}
+            className={`px-6 py-3 font-orbitron font-semibold transition-all flex items-center gap-2 ${
+              marketType === 'korean'
+                ? 'border-b-2 border-[#00d4ff] text-[#00d4ff]'
+                : 'border-b-2 border-transparent text-[rgba(255,255,255,0.4)] hover:text-[#00d4ff]'
+            }`}
+          >
+            <DollarSign className="w-4 h-4" />
+            <span>KOREAN</span>
+          </button>
+        </div>
+
         {/* 검색 */}
         <Card className="mb-8">
           <CardContent>
-            <div className="flex gap-3">
-              <input
-                type="text"
-                value={symbol}
-                onChange={(e) => setSymbol(e.target.value.toUpperCase())}
-                onKeyPress={(e) => e.key === 'Enter' && handleAnalyze()}
-                onFocus={(e) => e.target.select()}
-                placeholder="종목 코드 입력 (예: SPY, QQQ, BTC, ETH)"
-                className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-4 py-3 text-white"
-              />
-              <Button onClick={handleAnalyze} disabled={loading || !symbol}>
-                {loading ? "⚙️ 분석 중..." : "🔍 분석하기"}
-              </Button>
-            </div>
-            <div className="mt-3 text-xs text-gray-500">
-              💡 지원 종목: SPY, QQQ, GLD, SLV, USO, TLT, VNQ / BTC, ETH, SOL, XRP (실시간 데이터)
-            </div>
+            {marketType === 'korean' ? (
+              // 한국주식: 카테고리 + 종목 선택
+              <>
+                <div className="flex gap-3 mb-3">
+                  <select
+                    value={koreanCategory}
+                    onChange={(e) => {
+                      setKoreanCategory(e.target.value);
+                      setKoreanCode("");
+                    }}
+                    className="jarvis-input px-4 py-3 font-orbitron"
+                  >
+                    {CATEGORIES.map(cat => (
+                      <option key={cat} value={cat}>{cat}</option>
+                    ))}
+                  </select>
+                  <select
+                    value={koreanCode}
+                    onChange={(e) => setKoreanCode(e.target.value)}
+                    className="flex-1 jarvis-input px-4 py-3 font-orbitron"
+                  >
+                    <option value="">종목 선택</option>
+                    {getStocksByCategory(koreanCategory).map(stock => (
+                      <option key={stock.code} value={stock.code}>
+                        {stock.name} ({stock.code})
+                      </option>
+                    ))}
+                  </select>
+                  <Button onClick={handleAnalyze} disabled={loading || !koreanCode}>
+                    {loading ? "⚙️ 분석 중..." : "🔍 분석하기"}
+                  </Button>
+                </div>
+                <div className="mt-3 font-mono text-xs text-[rgba(0,212,255,0.5)] tracking-wide">
+                  <ChevronRight className="w-3 h-3 inline mr-1" />
+                  NAVER FINANCE REAL-TIME (5MIN CACHE)
+                </div>
+              </>
+            ) : (
+              // 해외주식/암호화폐: 직접 입력
+              <>
+                <div className="flex gap-3">
+                  <input
+                    type="text"
+                    value={symbol}
+                    onChange={(e) => setSymbol(e.target.value.toUpperCase())}
+                    onKeyPress={(e) => e.key === 'Enter' && handleAnalyze()}
+                    onFocus={(e) => e.target.select()}
+                    placeholder={
+                      marketType === 'crypto'
+                        ? "CRYPTO CODE (BTC, ETH, SOL...)"
+                        : "SYMBOL (SPY, QQQ, AAPL...)"
+                    }
+                    className="flex-1 jarvis-input px-4 py-3 font-orbitron"
+                  />
+                  <Button onClick={handleAnalyze} disabled={loading || !symbol}>
+                    {loading ? "⚙️ 분석 중..." : "🔍 분석하기"}
+                  </Button>
+                </div>
+                <div className="mt-3 text-xs text-gray-500">
+                  {marketType === 'crypto'
+                    ? "💡 지원: BTC, ETH, SOL, XRP, BNB (실시간 데이터)"
+                    : "💡 지원: SPY, QQQ, AAPL, TSLA, GLD, SLV, USO, TLT (실시간 데이터)"}
+                </div>
+              </>
+            )}
           </CardContent>
         </Card>
 
@@ -87,33 +321,149 @@ export default function AnalyzePage() {
         {/* 결과 */}
         {result && (
           <>
-            <div className="mb-8">
-              <h2 className="text-lg font-bold mb-4">
-                📈 {result.symbol} 실시간 분석 결과
-              </h2>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <ScoreMeter score={result.score} label={result.name} />
-                <RSIGauge rsi={result.rsi} />
-                <Card>
+            {result.isKorean ? (
+              // 한국주식 결과
+              <div className="mb-8">
+                <div className="flex items-center gap-3 mb-6">
+                  <TrendingUp className="w-6 h-6 text-[#00d4ff]" />
+                  <h2 className="font-orbitron text-xl font-bold text-[#00d4ff]">
+                    {result.name} ({result.symbol})
+                  </h2>
+                  <span className="font-mono text-sm text-[rgba(255,255,255,0.4)]">
+                    {result.market}
+                  </span>
+                </div>
+
+                {/* 가격 정보 */}
+                <Card className="mb-4">
                   <CardContent>
-                    <div className="text-xs text-gray-400 mb-4">레이어별 점수</div>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                      <div>
+                        <div className="label-display mb-2">PRICE</div>
+                        <div className="number-display text-2xl">
+                          ₩{result.price?.toLocaleString()}
+                        </div>
+                      </div>
+                      <div>
+                        <div className="label-display mb-2">CHANGE</div>
+                        <div className={`font-orbitron text-2xl font-bold flex items-center gap-1 ${
+                          result.changePercent > 0 ? 'status-profit' :
+                          result.changePercent < 0 ? 'status-loss' :
+                          'text-[rgba(255,255,255,0.4)]'
+                        }`}>
+                          {result.changePercent > 0 ? (
+                            <TrendingUp className="w-5 h-5" />
+                          ) : result.changePercent < 0 ? (
+                            <TrendingDown className="w-5 h-5" />
+                          ) : null}
+                          {Math.abs(result.change)?.toLocaleString()}
+                          <span className="text-sm">
+                            ({formatPercent(Math.abs(result.changePercent))})
+                          </span>
+                        </div>
+                      </div>
+                      <div>
+                        <div className="label-display mb-2">VOLUME</div>
+                        <div className="font-orbitron text-xl font-semibold text-white">
+                          {result.volume?.toLocaleString()}
+                        </div>
+                      </div>
+                      <div>
+                        <div className="label-display mb-2">CATEGORY</div>
+                        <div className="font-orbitron text-xl font-semibold status-cyan">
+                          {result.category}
+                        </div>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* 펀더멘털 (ETF 제외) */}
+                {result.category !== 'ETF' && (
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>💎 펀더멘털</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="p-4 bg-gray-800/50 rounded-lg">
+                          <div className="text-xs text-gray-400 mb-1">PER (배)</div>
+                          <div className="text-xl font-bold">
+                            {result.per !== undefined ? result.per.toFixed(2) : 'N/A'}
+                          </div>
+                        </div>
+                        <div className="p-4 bg-gray-800/50 rounded-lg">
+                          <div className="text-xs text-gray-400 mb-1">PBR (배)</div>
+                          <div className="text-xl font-bold">
+                            {result.pbr !== undefined ? result.pbr.toFixed(2) : 'N/A'}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="mt-4 p-3 bg-blue-500/10 border border-blue-500/30 rounded-lg text-sm text-gray-300">
+                        💡 네이버 금융 기준 펀더멘털 데이터 (실시간)
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {result.category === 'ETF' && (
+                  <Card className="border-blue-500/30 bg-blue-500/5">
+                    <CardContent>
+                      <div className="text-center py-6">
+                        <div className="text-4xl mb-3">📊</div>
+                        <div className="text-lg font-semibold text-blue-400 mb-2">
+                          ETF (상장지수펀드)
+                        </div>
+                        <div className="text-sm text-gray-400">
+                          ETF는 여러 종목의 포트폴리오이므로 개별 재무제표가 없습니다
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+              </div>
+            ) : (
+              // 해외주식/암호화폐 결과
+              <>
+              <div className="mb-8">
+                <div className="flex items-center gap-3 mb-6">
+                  <Activity className="w-6 h-6 text-[#00d4ff]" />
+                  <h2 className="font-orbitron text-xl font-bold text-[#00d4ff]">
+                    {getAssetDisplayName(result.symbol)}
+                  </h2>
+                  <span className="font-mono text-sm text-[rgba(255,255,255,0.4)]">
+                    REAL-TIME ANALYSIS
+                  </span>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <ScoreMeter score={result.score} label={result.name} />
+                  <RSIGauge rsi={result.rsi} />
+                  <Card>
+                    <CardContent>
+                      <div className="label-display mb-4">LAYER SCORES</div>
                     <div className="space-y-3">
                       <div className="flex justify-between items-center">
-                        <span className="text-sm text-gray-300">Layer 1 (기술)</span>
-                        <span className="text-lg font-bold text-blue-400">
-                          {result.layer1Score}
+                        <span className="font-noto text-sm text-[rgba(255,255,255,0.7)]">
+                          {getIndicatorLabel('Layer 1')}
+                        </span>
+                        <span className="number-display text-lg number-glow">
+                          <CountUp end={result.layer1Score} duration={1200} decimals={0} />
                         </span>
                       </div>
                       <div className="flex justify-between items-center">
-                        <span className="text-sm text-gray-300">Layer 2 (팩터)</span>
-                        <span className="text-lg font-bold text-green-400">
-                          {result.layer2Score}
+                        <span className="font-noto text-sm text-[rgba(255,255,255,0.7)]">
+                          {getIndicatorLabel('Layer 2')}
+                        </span>
+                        <span className="number-display text-lg status-profit number-glow">
+                          <CountUp end={result.layer2Score} duration={1200} decimals={0} />
                         </span>
                       </div>
                       <div className="flex justify-between items-center">
-                        <span className="text-sm text-gray-300">Layer 3 (매크로)</span>
-                        <span className="text-lg font-bold text-yellow-400">
-                          {result.layer3Score}
+                        <span className="font-noto text-sm text-[rgba(255,255,255,0.7)]">
+                          {getIndicatorLabel('Layer 3')}
+                        </span>
+                        <span className="number-display text-lg status-warning number-glow">
+                          <CountUp end={result.layer3Score} duration={1200} decimals={0} />
                         </span>
                       </div>
                     </div>
@@ -124,32 +474,36 @@ export default function AnalyzePage() {
 
             <Card className="mb-8">
               <CardHeader>
-                <CardTitle>💰 현재 가격 정보</CardTitle>
+                <CardTitle>
+                  <DollarSign className="w-5 h-5 inline mr-2" />
+                  PRICE INFORMATION
+                </CardTitle>
+                <CardDescription>Real-time market data</CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                   <div>
-                    <div className="text-xs text-gray-400 mb-1">현재가 (USD)</div>
-                    <div className="text-2xl font-bold">
+                    <div className="label-display mb-2">PRICE (USD)</div>
+                    <div className="number-display text-2xl">
                       ${result.price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </div>
                   </div>
                   <div>
-                    <div className="text-xs text-gray-400 mb-1">현재가 (KRW)</div>
-                    <div className="text-2xl font-bold text-blue-400">
+                    <div className="label-display mb-2">PRICE (KRW)</div>
+                    <div className="font-orbitron text-2xl font-bold text-white">
                       ₩{result.price_krw.toLocaleString()}
                     </div>
                   </div>
                   <div>
-                    <div className="text-xs text-gray-400 mb-1">RSI</div>
-                    <div className="text-2xl font-bold text-purple-400">
-                      {result.rsi}
+                    <div className="label-display mb-2">{getIndicatorLabel('RSI')}</div>
+                    <div className="number-display text-2xl number-glow">
+                      <CountUp end={result.rsi} duration={1200} decimals={0} />
                     </div>
                   </div>
                   <div>
-                    <div className="text-xs text-gray-400 mb-1">MACD</div>
-                    <div className={`text-2xl font-bold ${result.macd >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                      {result.macd.toFixed(2)}
+                    <div className="label-display mb-2">{getIndicatorLabel('MACD')}</div>
+                    <div className={`font-orbitron text-2xl font-bold number-glow ${result.macd >= 0 ? 'status-profit' : 'status-loss'}`}>
+                      <CountUp end={result.macd} duration={1200} decimals={2} />
                     </div>
                   </div>
                 </div>
@@ -160,93 +514,127 @@ export default function AnalyzePage() {
             {result.fundamentals && (
               <Card className="mb-8">
                 <CardHeader>
-                  <CardTitle>📊 펀더멘털 분석</CardTitle>
+                  <CardTitle>
+                    <Activity className="w-5 h-5 inline mr-2" />
+                    FUNDAMENTAL ANALYSIS
+                  </CardTitle>
+                  <CardDescription>Financial metrics & ratios</CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                    <div>
-                      <div className="text-xs text-gray-400 mb-1">PER (주가수익비율)</div>
-                      <div className={`text-2xl font-bold ${
-                        result.fundamentals.per !== null && result.fundamentals.per < 15 ? 'text-green-400' :
-                        result.fundamentals.per !== null && result.fundamentals.per > 25 ? 'text-red-400' :
-                        'text-gray-300'
-                      }`}>
-                        {result.fundamentals.per !== null ? result.fundamentals.per.toFixed(1) : 'N/A'}
+                  {/* ETF 안내 */}
+                  {result.fundamentals.isETF && (
+                    <div className="mb-4 p-4 bg-[rgba(0,212,255,0.1)] border border-[rgba(0,212,255,0.3)] rounded">
+                      <div className="flex items-start gap-3">
+                        <Activity className="w-6 h-6 text-[#00d4ff] flex-shrink-0" />
+                        <div>
+                          <div className="font-orbitron font-bold text-[#00d4ff] mb-2">
+                            ETF (Exchange Traded Fund)
+                          </div>
+                          <div className="font-noto text-sm text-[rgba(255,255,255,0.7)]">
+                            {result.fundamentals.etfMessage}
+                          </div>
+                          <div className="font-mono text-xs text-[rgba(0,212,255,0.5)] mt-2 tracking-wide">
+                            <ChevronRight className="w-3 h-3 inline mr-1" />
+                            EVALUATED BY TECHNICAL & MACRO INDICATORS
+                          </div>
+                        </div>
                       </div>
                     </div>
-                    <div>
-                      <div className="text-xs text-gray-400 mb-1">PBR (주가순자산비율)</div>
-                      <div className={`text-2xl font-bold ${
-                        result.fundamentals.pbr !== null && result.fundamentals.pbr < 1 ? 'text-green-400' :
-                        result.fundamentals.pbr !== null && result.fundamentals.pbr > 3 ? 'text-red-400' :
-                        'text-gray-300'
-                      }`}>
-                        {result.fundamentals.pbr !== null ? result.fundamentals.pbr.toFixed(1) : 'N/A'}
+                  )}
+
+                  {/* 펀더멘털 지표 */}
+                  {!result.fundamentals.isETF && (
+                    <>
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        <div>
+                          <div className="label-display mb-2">{getIndicatorLabel('PER')}</div>
+                          <div className={`number-display text-2xl ${
+                            result.fundamentals.per !== null && result.fundamentals.per < 15 ? 'status-profit' :
+                            result.fundamentals.per !== null && result.fundamentals.per > 25 ? 'status-loss' :
+                            ''
+                          }`}>
+                            {result.fundamentals.per !== null ? result.fundamentals.per.toFixed(1) : 'N/A'}
+                          </div>
+                        </div>
+                        <div>
+                          <div className="label-display mb-2">{getIndicatorLabel('PBR')}</div>
+                          <div className={`number-display text-2xl ${
+                            result.fundamentals.pbr !== null && result.fundamentals.pbr < 1 ? 'status-profit' :
+                            result.fundamentals.pbr !== null && result.fundamentals.pbr > 3 ? 'status-loss' :
+                            ''
+                          }`}>
+                            {result.fundamentals.pbr !== null ? result.fundamentals.pbr.toFixed(1) : 'N/A'}
+                          </div>
+                        </div>
+                        <div>
+                          <div className="label-display mb-2">{getIndicatorLabel('ROE')}</div>
+                          <div className={`number-display text-2xl ${
+                            result.fundamentals.roe !== null && result.fundamentals.roe > 15 ? 'status-profit' :
+                            result.fundamentals.roe !== null && result.fundamentals.roe < 5 ? 'status-loss' :
+                            ''
+                          }`}>
+                            {result.fundamentals.roe !== null ? `${result.fundamentals.roe.toFixed(1)}%` : 'N/A'}
+                          </div>
+                        </div>
+                        <div>
+                          <div className="text-xs text-gray-400 mb-1">부채비율</div>
+                          <div className={`text-2xl font-bold ${
+                            result.fundamentals.debtToEquity !== null && result.fundamentals.debtToEquity < 50 ? 'text-green-400' :
+                            result.fundamentals.debtToEquity !== null && result.fundamentals.debtToEquity > 150 ? 'text-red-400' :
+                            'text-gray-300'
+                          }`}>
+                            {result.fundamentals.debtToEquity !== null ? `${result.fundamentals.debtToEquity.toFixed(0)}%` : 'N/A'}
+                          </div>
+                        </div>
                       </div>
-                    </div>
-                    <div>
-                      <div className="text-xs text-gray-400 mb-1">ROE (자기자본이익률)</div>
-                      <div className={`text-2xl font-bold ${
-                        result.fundamentals.roe !== null && result.fundamentals.roe > 15 ? 'text-green-400' :
-                        result.fundamentals.roe !== null && result.fundamentals.roe < 5 ? 'text-red-400' :
-                        'text-gray-300'
-                      }`}>
-                        {result.fundamentals.roe !== null ? `${result.fundamentals.roe.toFixed(1)}%` : 'N/A'}
-                      </div>
-                    </div>
-                    <div>
-                      <div className="text-xs text-gray-400 mb-1">부채비율</div>
-                      <div className={`text-2xl font-bold ${
-                        result.fundamentals.debtToEquity !== null && result.fundamentals.debtToEquity < 50 ? 'text-green-400' :
-                        result.fundamentals.debtToEquity !== null && result.fundamentals.debtToEquity > 150 ? 'text-red-400' :
-                        'text-gray-300'
-                      }`}>
-                        {result.fundamentals.debtToEquity !== null ? `${result.fundamentals.debtToEquity.toFixed(0)}%` : 'N/A'}
-                      </div>
-                    </div>
-                  </div>
-                  {result.fundamentalScore && (
-                    <div className="mt-4 p-3 bg-blue-500/10 border border-blue-500/30 rounded-lg">
-                      <div className="text-sm text-blue-400">
-                        💎 펀더멘털 점수: <span className="font-bold text-lg">{result.fundamentalScore.toFixed(0)}</span> / 40점
-                      </div>
-                    </div>
+                      {result.fundamentalScore && (
+                        <div className="mt-4 p-3 bg-blue-500/10 border border-blue-500/30 rounded-lg">
+                          <div className="text-sm text-blue-400">
+                            💎 펀더멘털 점수: <span className="font-bold text-lg">{result.fundamentalScore.toFixed(0)}</span> / 40점
+                          </div>
+                        </div>
+                      )}
+                    </>
                   )}
                 </CardContent>
               </Card>
             )}
 
-            {/* 뉴스 감성 분석 */}
+            {/* 뉴스 분석 */}
             {result.news && result.news.articles && result.news.articles.length > 0 && (
               <Card className="mb-8">
                 <CardHeader>
-                  <CardTitle>📰 뉴스 감성 분석</CardTitle>
+                  <CardTitle>
+                    <Activity className="w-5 h-5 inline mr-2" />
+                    NEWS SENTIMENT ANALYSIS
+                  </CardTitle>
+                  <CardDescription>AI-powered market sentiment (Gemini)</CardDescription>
                 </CardHeader>
                 <CardContent>
                   <div className="mb-4 grid grid-cols-3 gap-3">
-                    <div className="bg-green-500/10 border border-green-500/30 rounded-lg p-3">
-                      <div className="text-xs text-gray-400">긍정 뉴스</div>
-                      <div className="text-2xl font-bold text-green-400">{result.news.positiveCount}</div>
+                    <div className="bg-[rgba(0,255,136,0.1)] border border-[rgba(0,255,136,0.3)] rounded p-3">
+                      <div className="label-display mb-2">POSITIVE</div>
+                      <div className="number-display text-2xl status-profit">{result.news.positiveCount}</div>
                     </div>
-                    <div className="bg-gray-500/10 border border-gray-500/30 rounded-lg p-3">
-                      <div className="text-xs text-gray-400">중립 뉴스</div>
-                      <div className="text-2xl font-bold text-gray-400">{result.news.neutralCount}</div>
+                    <div className="bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.1)] rounded p-3">
+                      <div className="label-display mb-2">NEUTRAL</div>
+                      <div className="number-display text-2xl">{result.news.neutralCount}</div>
                     </div>
-                    <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-3">
-                      <div className="text-xs text-gray-400">부정 뉴스</div>
-                      <div className="text-2xl font-bold text-red-400">{result.news.negativeCount}</div>
+                    <div className="bg-[rgba(255,68,102,0.1)] border border-[rgba(255,68,102,0.3)] rounded p-3">
+                      <div className="label-display mb-2">NEGATIVE</div>
+                      <div className="number-display text-2xl status-loss">{result.news.negativeCount}</div>
                     </div>
                   </div>
-                  <div className={`mb-4 p-3 rounded-lg ${
-                    result.news.overallSentiment > 3 ? 'bg-green-500/10 border border-green-500/30' :
-                    result.news.overallSentiment < -3 ? 'bg-red-500/10 border border-red-500/30' :
-                    'bg-gray-500/10 border border-gray-500/30'
+                  <div className={`mb-4 p-4 rounded ${
+                    result.news.overallSentiment > 3 ? 'bg-[rgba(0,255,136,0.1)] border border-[rgba(0,255,136,0.3)]' :
+                    result.news.overallSentiment < -3 ? 'bg-[rgba(255,68,102,0.1)] border border-[rgba(255,68,102,0.3)]' :
+                    'bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.1)]'
                   }`}>
-                    <div className="text-sm text-gray-400 mb-1">전체 감성 점수</div>
-                    <div className={`text-2xl font-bold ${
-                      result.news.overallSentiment > 3 ? 'text-green-400' :
-                      result.news.overallSentiment < -3 ? 'text-red-400' :
-                      'text-gray-300'
+                    <div className="label-display mb-2">MARKET SENTIMENT SCORE</div>
+                    <div className={`font-orbitron text-3xl font-bold ${
+                      result.news.overallSentiment > 3 ? 'status-profit' :
+                      result.news.overallSentiment < -3 ? 'status-loss' :
+                      'status-cyan'
                     }`}>
                       {result.news.overallSentiment > 0 ? '+' : ''}{result.news.overallSentiment.toFixed(1)} / 10
                     </div>
@@ -285,47 +673,52 @@ export default function AnalyzePage() {
             {result.riskProfile && (
               <Card className="mb-8">
                 <CardHeader>
-                  <CardTitle>⚖️ 리스크 관리 가이드</CardTitle>
+                  <CardTitle>
+                    <Activity className="w-5 h-5 inline mr-2" />
+                    RISK MANAGEMENT
+                  </CardTitle>
+                  <CardDescription>Kelly Criterion position sizing</CardDescription>
                 </CardHeader>
                 <CardContent>
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
-                    <div className="bg-purple-500/10 border border-purple-500/30 rounded-lg p-3">
-                      <div className="text-xs text-gray-400 mb-1">권장 포지션</div>
-                      <div className="text-2xl font-bold text-purple-400">
+                    <div className="bg-[rgba(0,212,255,0.1)] border border-[rgba(0,212,255,0.3)] rounded p-3">
+                      <div className="label-display mb-2">POSITION</div>
+                      <div className="number-display text-2xl">
                         {result.riskProfile.recommendedPosition.toFixed(1)}%
                       </div>
-                      <div className="text-xs text-gray-500 mt-1">포트폴리오 대비</div>
+                      <div className="font-mono text-xs text-[rgba(255,255,255,0.4)] mt-1">OF PORTFOLIO</div>
                     </div>
-                    <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-3">
-                      <div className="text-xs text-gray-400 mb-1">손절가</div>
-                      <div className="text-2xl font-bold text-red-400">
+                    <div className="bg-[rgba(255,68,102,0.1)] border border-[rgba(255,68,102,0.3)] rounded p-3">
+                      <div className="label-display mb-2">STOP LOSS</div>
+                      <div className="number-display text-2xl status-loss">
                         -{result.riskProfile.stopLoss.toFixed(1)}%
                       </div>
-                      <div className="text-xs text-gray-500 mt-1">진입가 대비</div>
+                      <div className="font-mono text-xs text-[rgba(255,255,255,0.4)] mt-1">FROM ENTRY</div>
                     </div>
-                    <div className="bg-green-500/10 border border-green-500/30 rounded-lg p-3">
-                      <div className="text-xs text-gray-400 mb-1">익절가</div>
-                      <div className="text-2xl font-bold text-green-400">
+                    <div className="bg-[rgba(0,255,136,0.1)] border border-[rgba(0,255,136,0.3)] rounded p-3">
+                      <div className="label-display mb-2">TAKE PROFIT</div>
+                      <div className="number-display text-2xl status-profit">
                         +{result.riskProfile.takeProfit.toFixed(1)}%
                       </div>
-                      <div className="text-xs text-gray-500 mt-1">진입가 대비</div>
+                      <div className="font-mono text-xs text-[rgba(255,255,255,0.4)] mt-1">FROM ENTRY</div>
                     </div>
-                    <div className="bg-blue-500/10 border border-blue-500/30 rounded-lg p-3">
-                      <div className="text-xs text-gray-400 mb-1">예상 승률</div>
-                      <div className="text-2xl font-bold text-blue-400">
+                    <div className="bg-[rgba(0,212,255,0.1)] border border-[rgba(0,212,255,0.3)] rounded p-3">
+                      <div className="label-display mb-2">WIN RATE</div>
+                      <div className="number-display text-2xl">
                         {(result.riskProfile.winRate * 100).toFixed(0)}%
                       </div>
-                      <div className="text-xs text-gray-500 mt-1">신호 기반 추정</div>
+                      <div className="font-mono text-xs text-[rgba(255,255,255,0.4)] mt-1">ESTIMATED</div>
                     </div>
                   </div>
-                  <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-lg p-4">
-                    <div className="text-sm text-yellow-400 mb-2">
-                      💡 Kelly Criterion 기반 포지션 사이징
+                  <div className="bg-[rgba(255,215,0,0.1)] border border-[rgba(255,215,0,0.3)] rounded p-4">
+                    <div className="font-orbitron text-sm status-warning mb-3 flex items-center gap-2">
+                      <ChevronRight className="w-4 h-4" />
+                      KELLY CRITERION STRATEGY
                     </div>
-                    <div className="text-xs text-gray-300">
-                      • 포지션: 총 자산의 {result.riskProfile.recommendedPosition.toFixed(1)}% 투자 권장<br />
-                      • 손절: 진입가 대비 -{result.riskProfile.stopLoss.toFixed(1)}% 도달 시 매도<br />
-                      • 익절: 진입가 대비 +{result.riskProfile.takeProfit.toFixed(1)}% 도달 시 일부 매도 고려
+                    <div className="font-noto text-sm text-[rgba(255,255,255,0.7)] space-y-1">
+                      <div>• 포지션: 총 자산의 {result.riskProfile.recommendedPosition.toFixed(1)}% 투자 권장</div>
+                      <div>• 손절: 진입가 대비 -{result.riskProfile.stopLoss.toFixed(1)}% 도달 시 매도</div>
+                      <div>• 익절: 진입가 대비 +{result.riskProfile.takeProfit.toFixed(1)}% 도달 시 일부 매도 고려</div>
                     </div>
                   </div>
                 </CardContent>
@@ -334,32 +727,36 @@ export default function AnalyzePage() {
 
             <Card>
               <CardHeader>
-                <CardTitle>💡 AI 투자 조언</CardTitle>
+                <CardTitle>
+                  <Activity className="w-5 h-5 inline mr-2" />
+                  AI RECOMMENDATION
+                </CardTitle>
+                <CardDescription>J.A.R.V.I.S enhanced signal analysis</CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
-                  <div className={`rounded-lg p-4 ${
-                    result.score >= 75 ? 'bg-green-500/10 border border-green-500/30' :
-                    result.score >= 55 ? 'bg-blue-500/10 border border-blue-500/30' :
-                    result.score >= 40 ? 'bg-yellow-500/10 border border-yellow-500/30' :
-                    'bg-red-500/10 border border-red-500/30'
+                  <div className={`rounded p-5 ${
+                    result.score >= 75 ? 'bg-[rgba(0,255,136,0.1)] border border-[rgba(0,255,136,0.3)]' :
+                    result.score >= 55 ? 'bg-[rgba(0,212,255,0.1)] border border-[rgba(0,212,255,0.3)]' :
+                    result.score >= 40 ? 'bg-[rgba(255,215,0,0.1)] border border-[rgba(255,215,0,0.3)]' :
+                    'bg-[rgba(255,68,102,0.1)] border border-[rgba(255,68,102,0.3)]'
                   }`}>
-                    <div className={`font-bold mb-2 ${
-                      result.score >= 75 ? 'text-green-400' :
-                      result.score >= 55 ? 'text-blue-400' :
-                      result.score >= 40 ? 'text-yellow-400' :
-                      'text-red-400'
+                    <div className="label-display mb-3">SIGNAL</div>
+                    <div className={`font-orbitron text-3xl font-bold mb-4 ${
+                      result.score >= 75 ? 'status-profit' :
+                      result.score >= 55 ? 'status-cyan' :
+                      result.score >= 40 ? 'status-warning' :
+                      'status-loss'
                     }`}>
-                      🎯 투자 신호
+                      {result.action}
                     </div>
-                    <div className="text-2xl font-bold mb-3">{result.action}</div>
-                    <div className="text-sm text-gray-400">
-                      최종 점수: {result.score}점 / 100점
+                    <div className="font-mono text-sm text-[rgba(255,255,255,0.5)]">
+                      SCORE: <span className="number-display number-glow"><CountUp end={result.score} duration={1500} decimals={0} /></span> / 100
                     </div>
                   </div>
 
-                  <div className="text-sm text-gray-300 bg-gray-800/50 rounded-lg p-4">
-                    <div className="font-bold mb-3">📋 분석 완료 항목 (Enhanced)</div>
+                  <div className="font-noto text-sm text-[rgba(255,255,255,0.7)] bg-[rgba(0,20,45,0.5)] rounded p-4">
+                    <div className="label-display mb-3">ANALYSIS COMPLETED</div>
                     <ul className="space-y-2">
                       <li className="flex items-center gap-2">
                         <span className="text-green-500">✅</span>
@@ -382,7 +779,7 @@ export default function AnalyzePage() {
                       {result.news && (
                         <li className="flex items-center gap-2">
                           <span className="text-blue-500">🆕</span>
-                          <span>뉴스 감성 분석 (Gemini AI)</span>
+                          <span>뉴스 분석 (Gemini AI)</span>
                         </li>
                       )}
                       {result.cryptoBoost && (
@@ -426,27 +823,138 @@ export default function AnalyzePage() {
                       </div>
                     </div>
                   )}
+
+                  {/* AI 투자 코멘트 */}
+                  <div className="mt-6 jarvis-card p-5">
+                    <div className="label-display mb-3 flex items-center gap-2">
+                      <span className="text-[#00FFD1]">🤖</span>
+                      AI 투자 코멘트 (Gemini)
+                    </div>
+                    {loadingAI ? (
+                      <div className="flex items-center gap-2 text-gray-400">
+                        <Activity className="w-4 h-4 animate-spin" />
+                        <span className="font-mono text-sm">AI 분석 중...</span>
+                      </div>
+                    ) : aiComment ? (
+                      <div className="font-noto text-sm leading-relaxed text-gray-300 bg-[rgba(0,255,180,0.05)] border border-[rgba(0,255,180,0.1)] rounded p-4">
+                        <TypingEffect text={aiComment} speed={20} />
+                      </div>
+                    ) : (
+                      <div className="font-mono text-sm text-gray-500">
+                        AI 코멘트를 생성하려면 Gemini API 키를 설정하세요.
+                      </div>
+                    )}
+                  </div>
+
+                  {/* ── 통합 신호 점수 ── */}
+                  {!result.isKorean && macro && (
+                    <>
+                      <div style={{ marginTop: 24 }}>
+                        {(() => {
+                          const analyzeScore = calcIntegratedScore({
+                            rsiScore: rsiToScore(result?.rsi),
+                            macdScore: macdToScore(result?.macd),
+                            bbScore: bbToScore(0.5),
+                            vix: safeNum(macro?.vix, 20),
+                            buffettScore: buffettToScore(macro?.buffett ?? macro?.buffettIndicator),
+                            rateScore: rateToScore(macro?.fedRate),
+                            newsFactorScore: safeNum(result?.layer3Score, 50),
+                          });
+
+                          const vixFiltered = applyVixFilter({
+                            vix: safeNum(macro?.vix, 20),
+                            cryptoFearGreed: safeNum(macro?.fearGreed, 50),
+                            originalScore: analyzeScore.totalScore,
+                            assetType: 'stock',
+                          });
+
+                          return (
+                            <>
+                              <ScoreGauge
+                                score={vixFiltered.adjustedScore}
+                                signal={analyzeScore.signal}
+                                confidence={analyzeScore.confidence}
+                                layer1={analyzeScore.layer1Score}
+                                layer2={analyzeScore.layer2Score}
+                                layer3={analyzeScore.layer3Score}
+                                vixPenalty={analyzeScore.vixPenalty}
+                              />
+
+                              {/* ── Kelly 포지션 ── */}
+                              {analyzeScore.signal !== 'HOLD' ? (
+                                <div style={{ marginTop: 16 }}>
+                                  <KellyCard
+                                    kellyOutput={calcKellyPosition({
+                                      signalScore: analyzeScore.totalScore,
+                                      currentPrice: safeNum(result?.price, 100),
+                                      maxAllocation: 0.25,
+                                    })}
+                                    ticker={result?.symbol ?? 'TICKER'}
+                                    currentPrice={safeNum(result?.price, 100)}
+                                    priceInKRW={result?.price_krw}
+                                  />
+                                </div>
+                              ) : (
+                                <div style={{
+                                  marginTop: 16,
+                                  padding: '12px 16px',
+                                  background: 'rgba(0,170,255,0.08)',
+                                  border: '1px solid rgba(0,170,255,0.2)',
+                                  borderRadius: 8,
+                                  color: '#00AAFF',
+                                  fontSize: 13,
+                                  fontFamily: 'IBM Plex Mono',
+                                }}>
+                                  ⏸ 관망 구간 — 포지션 산출 보류
+                                </div>
+                              )}
+
+                              {/* CAUTION 경고 배너 */}
+                              {vixFiltered.riskLevel === 'HIGH' || vixFiltered.riskLevel === 'EXTREME' ? (
+                                <div style={{
+                                  marginTop: 12,
+                                  padding: '10px 16px',
+                                  background: 'rgba(255,140,0,0.12)',
+                                  border: '1px solid rgba(255,140,0,0.4)',
+                                  borderRadius: 8,
+                                  color: '#FFA500',
+                                  fontSize: 13,
+                                }}>
+                                  ⚠ {vixFiltered.warningMessage}
+                                </div>
+                              ) : null}
+                            </>
+                          );
+                        })()}
+                      </div>
+                    </>
+                  )}
                 </div>
               </CardContent>
             </Card>
+            </>
+            )}
           </>
         )}
 
         {!result && !loading && !error && (
-          <div className="text-center py-20 text-gray-500">
-            <div className="text-4xl mb-4">🔍</div>
-            <div className="text-lg mb-2">종목 코드를 입력하고 분석을 시작하세요</div>
-            <div className="text-sm text-gray-600">
-              실제 API 데이터로 3레이어 분석을 수행합니다
+          <div className="text-center py-20">
+            <Activity className="w-16 h-16 text-[#00d4ff] mx-auto mb-6 animate-pulse" />
+            <div className="font-orbitron text-xl font-bold text-[#00d4ff] mb-3">
+              AWAITING INPUT
+            </div>
+            <div className="font-noto text-sm text-[rgba(255,255,255,0.5)]">
+              종목 코드를 입력하여 3-Layer 분석을 시작하세요
             </div>
           </div>
         )}
 
         {result && (
           <div className="mt-8 text-center">
-            <div className="inline-flex items-center gap-2 bg-green-500/10 border border-green-500/30 rounded-lg px-4 py-2">
-              <span className="text-sm text-green-400">
-                ✅ 실시간 데이터 분석 완료 (Yahoo Finance, Binance)
+            <div className="inline-flex items-center gap-2 bg-[rgba(0,255,136,0.1)] border border-[rgba(0,255,136,0.3)] rounded px-5 py-3">
+              <Activity className="w-4 h-4 text-[#00FF88]" />
+              <span className="font-mono text-sm status-profit tracking-wide">
+                ANALYSIS COMPLETE - REAL-TIME DATA
               </span>
             </div>
           </div>

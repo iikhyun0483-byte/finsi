@@ -238,6 +238,28 @@ export default function SettingsPage() {
                   />
                 </button>
               </div>
+
+              <div className="mt-4 p-4 bg-blue-500/10 border border-blue-500/30 rounded">
+                <div className="font-semibold mb-2">🔔 브라우저 알림 허용</div>
+                <div className="text-xs text-gray-400 mb-3">
+                  관심종목 목표가 도달 시 알림을 받으려면 브라우저 알림을 허용해주세요.
+                </div>
+                <Button
+                  onClick={async () => {
+                    if ('Notification' in window) {
+                      const permission = await Notification.requestPermission();
+                      if (permission === 'granted') {
+                        alert('✅ 알림 허용됨!');
+                        new Notification('FINSI 알림 테스트', { body: '알림이 활성화되었습니다!' });
+                      }
+                    }
+                  }}
+                  variant="primary"
+                  size="sm"
+                >
+                  알림 허용하기
+                </Button>
+              </div>
             </div>
           </CardContent>
         </Card>

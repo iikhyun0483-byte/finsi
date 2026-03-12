@@ -1,7 +1,7 @@
 import { cn } from "@/lib/utils";
 
 interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
-  variant?: "primary" | "secondary" | "danger" | "ghost";
+  variant?: "primary" | "secondary" | "danger" | "ghost" | "profit" | "loss";
   size?: "sm" | "md" | "lg";
   children: React.ReactNode;
 }
@@ -13,19 +13,21 @@ export function Button({
   children,
   ...props
 }: ButtonProps) {
-  const baseStyles = "font-semibold rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed";
+  const baseStyles = "jarvis-button rounded font-orbitron font-semibold transition-all disabled:opacity-50 disabled:cursor-not-allowed";
 
   const variants = {
-    primary: "bg-blue-600 hover:bg-blue-700 text-white border border-blue-500",
-    secondary: "bg-gray-800 hover:bg-gray-700 text-white border border-gray-700",
-    danger: "bg-red-600 hover:bg-red-700 text-white border border-red-500",
-    ghost: "bg-transparent hover:bg-gray-800 text-gray-300 border border-gray-700",
+    primary: "border-[rgba(0,255,180,0.4)] text-[#00FFD1] hover:shadow-[0_0_20px_rgba(0,255,180,0.4)] hover:text-[#00FF41]",
+    secondary: "border-[rgba(255,255,255,0.2)] text-[rgba(255,255,255,0.7)] hover:text-white",
+    danger: "border-[rgba(255,68,102,0.4)] text-[#FF4466] hover:shadow-[0_0_20px_rgba(255,68,102,0.3)]",
+    ghost: "border-transparent text-[rgba(255,255,255,0.4)] hover:text-[#00FFD1] hover:border-[rgba(0,255,180,0.2)]",
+    profit: "border-[rgba(0,255,136,0.4)] text-[#00FF88] hover:shadow-[0_0_20px_rgba(0,255,136,0.3)]",
+    loss: "border-[rgba(255,68,102,0.4)] text-[#FF4466] hover:shadow-[0_0_20px_rgba(255,68,102,0.3)]",
   };
 
   const sizes = {
-    sm: "px-3 py-1.5 text-xs",
-    md: "px-4 py-2 text-sm",
-    lg: "px-6 py-3 text-base",
+    sm: "px-3 py-1.5 text-xs tracking-wider",
+    md: "px-5 py-2.5 text-sm tracking-wide",
+    lg: "px-7 py-3.5 text-base tracking-wide",
   };
 
   return (

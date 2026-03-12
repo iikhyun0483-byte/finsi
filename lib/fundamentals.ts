@@ -12,7 +12,18 @@ export interface FundamentalData {
   revenueGrowth: number | null; // Revenue Growth YoY
   grossMargin: number | null;   // Gross Margin
   operatingMargin: number | null; // Operating Margin
+  isETF?: boolean;              // ETF 여부
+  etfMessage?: string;          // ETF 안내 메시지
 }
+
+// ETF 목록 (펀더멘털 분석 불가)
+const ETF_SYMBOLS = [
+  'SPY', 'QQQ', 'DIA', 'IWM',  // 주식 ETF
+  'GLD', 'SLV', 'USO', 'XLE',  // 원자재 ETF
+  'TLT', 'IEF', 'SHY',         // 채권 ETF
+  'VNQ', 'IYR',                // 리츠 ETF
+  'VTI', 'VOO', 'IVV',         // 기타 주요 ETF
+];
 
 // 캐시 (1일)
 const cache = new Map<string, { data: FundamentalData; expiry: number }>();
@@ -22,70 +33,101 @@ const CACHE_DURATION = 24 * 60 * 60 * 1000; // 24시간
  * FMP API로 재무 데이터 조회
  */
 export async function getFundamentals(symbol: string): Promise<FundamentalData> {
+  // ETF 체크 (펀더멘털 분석 불가)
+  if (ETF_SYMBOLS.includes(symbol.toUpperCase())) {
+    console.log(`📊 ${symbol}은 ETF입니다 - 펀더멘털 분석 불가`);
+    return {
+      symbol,
+      per: null,
+      pbr: null,
+      roe: null,
+      debtToEquity: null,
+      revenueGrowth: null,
+      grossMargin: null,
+      operatingMargin: null,
+      isETF: true,
+      etfMessage: `${symbol}은 ETF(상장지수펀드)로 여러 종목의 포트폴리오이므로 개별 재무제표가 없습니다.`,
+    };
+  }
+
   const cached = cache.get(symbol);
   if (cached && Date.now() < cached.expiry) {
     console.log(`💾 ${symbol} 재무 데이터 캐시 사용`);
     return cached.data;
   }
 
-  const apiKey = process.env.FMP_API_KEY;
-  
-  if (!apiKey || apiKey === "your_fmp_api_key") {
-    console.warn("⚠️ FMP_API_KEY 미설정 - 기본값 사용");
+  const apiKey = process.env.ALPHA_VANTAGE_API_KEY;
+
+  if (!apiKey) {
+    console.warn(`⚠️ ALPHA_VANTAGE_API_KEY 미설정 - 기본값 사용`);
     return getDefaultFundamentals(symbol);
   }
 
   try {
-    console.log(`📊 ${symbol} 재무 데이터 조회 중...`);
+    console.log(`📊 ${symbol} 재무 데이터 조회 중... (Alpha Vantage)`);
 
-    // 1. Key Metrics (PER, PBR, ROE, etc.)
-    const metricsRes = await fetch(
-      `https://financialmodelingprep.com/api/v3/key-metrics/${symbol}?apikey=${apiKey}&limit=1`
+    // 1. OVERVIEW API - PER, PBR, ROE 등
+    const overviewResponse = await fetch(
+      `https://www.alphavantage.co/query?function=OVERVIEW&symbol=${symbol}&apikey=${apiKey}`
     );
 
-    if (!metricsRes.ok) {
-      throw new Error(`FMP API error: ${metricsRes.status}`);
+    if (!overviewResponse.ok) {
+      throw new Error(`Alpha Vantage OVERVIEW error: ${overviewResponse.status}`);
     }
 
-    const metrics = await metricsRes.json();
+    const overview = await overviewResponse.json();
 
-    // 2. Financial Ratios (Debt/Equity, Margins)
-    const ratiosRes = await fetch(
-      `https://financialmodelingprep.com/api/v3/ratios/${symbol}?apikey=${apiKey}&limit=1`
-    );
+    // Rate limit 체크
+    if (overview.Note) {
+      console.warn(`⚠️ Alpha Vantage Rate Limit: ${overview.Note}`);
+      return getDefaultFundamentals(symbol);
+    }
 
-    const ratios = ratiosRes.ok ? await ratiosRes.json() : [];
+    // 데이터 없음 (잘못된 심볼 등)
+    if (!overview.Symbol) {
+      console.warn(`⚠️ ${symbol}: Alpha Vantage에서 데이터 없음`);
+      return getDefaultFundamentals(symbol);
+    }
 
-    // 3. Income Statement (Revenue Growth)
-    const incomeRes = await fetch(
-      `https://financialmodelingprep.com/api/v3/income-statement/${symbol}?apikey=${apiKey}&limit=2`
-    );
+    // 2. BALANCE_SHEET API - 부채비율 계산
+    let debtToEquity: number | null = null;
 
-    const income = incomeRes.ok ? await incomeRes.json() : [];
+    try {
+      // Rate limit 방지를 위한 1초 대기
+      await new Promise(resolve => setTimeout(resolve, 1000));
 
-    // 데이터 파싱
-    const m = metrics[0] || {};
-    const r = ratios[0] || {};
-    
-    // Revenue Growth 계산
-    let revenueGrowth = null;
-    if (income.length >= 2) {
-      const current = income[0]?.revenue || 0;
-      const previous = income[1]?.revenue || 0;
-      if (previous > 0) {
-        revenueGrowth = ((current - previous) / previous) * 100;
+      const balanceSheetResponse = await fetch(
+        `https://www.alphavantage.co/query?function=BALANCE_SHEET&symbol=${symbol}&apikey=${apiKey}`
+      );
+
+      if (balanceSheetResponse.ok) {
+        const balanceSheet = await balanceSheetResponse.json();
+
+        if (balanceSheet.annualReports && balanceSheet.annualReports.length > 0) {
+          const latestReport = balanceSheet.annualReports[0];
+          const totalLiabilities = parseFloat(latestReport.totalLiabilities);
+          const totalEquity = parseFloat(latestReport.totalShareholderEquity);
+
+          if (!isNaN(totalLiabilities) && !isNaN(totalEquity) && totalEquity > 0) {
+            debtToEquity = (totalLiabilities / totalEquity) * 100;
+            console.log(`✅ ${symbol} 부채비율 계산: ${debtToEquity.toFixed(1)}%`);
+          }
+        }
       }
+    } catch (error) {
+      console.warn(`⚠️ ${symbol} BALANCE_SHEET 조회 실패:`, error);
     }
 
+    // 데이터 추출 및 변환
     const data: FundamentalData = {
       symbol,
-      per: m.peRatio || null,
-      pbr: m.priceToBookRatio || null,
-      roe: m.roe ? m.roe * 100 : null, // 백분율로 변환
-      debtToEquity: r.debtEquityRatio || null,
-      revenueGrowth,
-      grossMargin: r.grossProfitMargin ? r.grossProfitMargin * 100 : null,
-      operatingMargin: r.operatingProfitMargin ? r.operatingProfitMargin * 100 : null,
+      per: overview.PERatio ? parseFloat(overview.PERatio) : null,
+      pbr: overview.PriceToBookRatio ? parseFloat(overview.PriceToBookRatio) : null,
+      roe: overview.ReturnOnEquityTTM ? parseFloat(overview.ReturnOnEquityTTM) * 100 : null, // 1.52 → 152%
+      debtToEquity, // 계산된 부채비율
+      revenueGrowth: overview.QuarterlyRevenueGrowthYOY ? parseFloat(overview.QuarterlyRevenueGrowthYOY) * 100 : null, // 0.157 → 15.7%
+      grossMargin: overview.ProfitMargin ? parseFloat(overview.ProfitMargin) * 100 : null, // 0.27 → 27%
+      operatingMargin: overview.OperatingMarginTTM ? parseFloat(overview.OperatingMarginTTM) * 100 : null, // 0.354 → 35.4%
     };
 
     // 캐시 저장
@@ -94,11 +136,11 @@ export async function getFundamentals(symbol: string): Promise<FundamentalData> 
       expiry: Date.now() + CACHE_DURATION,
     });
 
-    console.log(`✅ ${symbol} 재무: PER=${data.per?.toFixed(1)}, ROE=${data.roe?.toFixed(1)}%`);
+    console.log(`✅ ${symbol} 재무: PER=${data.per?.toFixed(1)}, PBR=${data.pbr?.toFixed(1)}, ROE=${data.roe?.toFixed(1)}%`);
 
     return data;
   } catch (error) {
-    console.error(`❌ ${symbol} 재무 데이터 조회 실패:`, error);
+    console.error(`❌ ${symbol} Alpha Vantage 조회 실패:`, error);
     return getDefaultFundamentals(symbol);
   }
 }

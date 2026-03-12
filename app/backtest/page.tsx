@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Button } from "@/components/common/Button";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/common/Card";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Area, AreaChart, BarChart, Bar } from "recharts";
+import { formatKRW } from "@/lib/format";
 
 const STRATEGIES = {
   buy_and_hold: {
@@ -604,7 +605,7 @@ export default function BacktestPage() {
               <>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
                   {[
-                    { label: "최종 자산", value: `₩${Math.round(result.stats.finalValue / 10000)}만` },
+                    { label: "최종 자산", value: formatKRW(result.stats.finalValue) },
                     { label: "총 수익률 (%)", value: `${parseFloat(result.stats.totalReturn).toFixed(1).replace(/\.0$/, "")}%` },
                     { label: "CAGR (연평균복리수익률)", value: `${parseFloat(result.stats.cagr).toFixed(1).replace(/\.0$/, "")}%` },
                     { label: "MDD (최대낙폭)", value: `-${parseFloat(result.stats.mdd).toFixed(1).replace(/\.0$/, "")}%` },
@@ -633,19 +634,19 @@ export default function BacktestPage() {
                         <div>
                           <div className="text-xs text-gray-400 mb-1">총 수수료</div>
                           <div className="text-xl font-bold text-red-400">
-                            -₩{Math.round(parseFloat(result.stats.totalCommission) / 10000)}만
+                            -{formatKRW(parseFloat(result.stats.totalCommission))}
                           </div>
                         </div>
                         <div>
                           <div className="text-xs text-gray-400 mb-1">총 세금</div>
                           <div className="text-xl font-bold text-red-400">
-                            -₩{Math.round(parseFloat(result.stats.totalTax) / 10000)}만
+                            -{formatKRW(parseFloat(result.stats.totalTax))}
                           </div>
                         </div>
                         <div>
                           <div className="text-xs text-gray-400 mb-1">순수익 (비용 제외)</div>
                           <div className={`text-xl font-bold ${parseFloat(result.stats.netProfit) >= 0 ? "text-green-400" : "text-red-400"}`}>
-                            {parseFloat(result.stats.netProfit) >= 0 ? "+" : ""}₩{Math.round(parseFloat(result.stats.netProfit) / 10000)}만
+                            {parseFloat(result.stats.netProfit) >= 0 ? "+" : ""}{formatKRW(Math.abs(parseFloat(result.stats.netProfit)))}
                           </div>
                         </div>
                       </div>

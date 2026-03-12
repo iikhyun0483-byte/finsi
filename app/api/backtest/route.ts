@@ -64,6 +64,7 @@ function runBacktest(
   let lastBuyPrice = 0;
   let totalWins = 0;
   let totalTrades = 0;
+  let totalSells = 0; // 매도 횟수만 카운트
   let totalCommissionPaid = 0;
   let totalTaxPaid = 0;
 
@@ -202,6 +203,7 @@ function runBacktest(
       cash += proceeds - commissionFee - taxAmount;
       totalCommissionPaid += commissionFee;
       totalTrades++;
+      totalSells++; // 매도 횟수 카운트
 
       tradeLog.push({
         date: prices[i].date,
@@ -222,10 +224,53 @@ function runBacktest(
     });
   }
 
+  // 마지막에 보유 주식 청산 (모든 전략)
+  if (shares > 0) {
+    const lastPrice = closes[closes.length - 1];
+    const sellPrice = lastPrice * (1 - slippage);
+    const proceeds = shares * sellPrice;
+    const commissionFee = proceeds * commission;
+    let taxAmount = 0;
+
+    if (enableTax && sellPrice > lastBuyPrice) {
+      const capitalGain = (sellPrice - lastBuyPrice) * shares;
+      taxAmount = capitalGain * 0.22;
+      totalTaxPaid += taxAmount;
+    }
+
+    if (sellPrice > lastBuyPrice) totalWins++;
+
+    cash += proceeds - commissionFee - taxAmount;
+    totalCommissionPaid += commissionFee;
+    totalTrades++;
+    totalSells++;
+
+    tradeLog.push({
+      date: prices[prices.length - 1].date,
+      type: "청산",
+      price: sellPrice.toFixed(2),
+      reason: "백테스트 종료 (자동 청산)",
+      profit: (((sellPrice - lastBuyPrice) / lastBuyPrice) * 100).toFixed(2),
+      commission: commissionFee.toFixed(2),
+      tax: enableTax ? taxAmount.toFixed(2) : "0.00",
+    });
+
+    shares = 0;
+
+    // 최종 포트폴리오 값 업데이트
+    portfolio[portfolio.length - 1].value = Math.round(cash);
+  }
+
   // 성과 지표 계산
   const finalValue = portfolio[portfolio.length - 1]?.value || capital;
   const totalReturn = ((finalValue - capital) / capital) * 100;
-  const years = portfolio.length / 252;
+
+  // 실제 날짜 기준 연수 계산
+  const startDate = new Date(portfolio[0].date);
+  const endDate = new Date(portfolio[portfolio.length - 1].date);
+  const daysDiff = (endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24);
+  const years = daysDiff / 365.25; // 윤년 고려
+
   const cagr = calcCAGR(capital, finalValue, years);
   const mddResult = calcMDD(portfolio);
   const sharpe = calcSharpe(portfolio);
@@ -241,7 +286,7 @@ function runBacktest(
       mddStart: mddResult.mddStart,
       mddEnd: mddResult.mddEnd,
       totalTrades,
-      winRate: totalTrades > 0 ? ((totalWins / totalTrades) * 100).toFixed(1) : "0.0",
+      winRate: totalSells > 0 ? ((totalWins / totalSells) * 100).toFixed(1) : "0.0",
       sharpe: sharpe.toFixed(2),
       years: years.toFixed(1),
       totalCommission: totalCommissionPaid.toFixed(2),

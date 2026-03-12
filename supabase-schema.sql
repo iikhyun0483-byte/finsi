@@ -112,6 +112,24 @@ CREATE TABLE IF NOT EXISTS exchange_rates (
 
 CREATE INDEX idx_exchange_rates_currencies ON exchange_rates(from_currency, to_currency, created_at DESC);
 
+-- 8. 투자 일지 테이블
+CREATE TABLE IF NOT EXISTS trade_journal (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  user_id UUID NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000',
+  ticker VARCHAR(20) NOT NULL,
+  action VARCHAR(10) NOT NULL CHECK (action IN ('매수', '매도')),
+  price DECIMAL(12, 2) NOT NULL,
+  quantity DECIMAL(18, 8) NOT NULL,
+  total_amount DECIMAL(18, 2) GENERATED ALWAYS AS (price * quantity) STORED,
+  date DATE NOT NULL DEFAULT CURRENT_DATE,
+  note TEXT,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+CREATE INDEX idx_trade_journal_user ON trade_journal(user_id);
+CREATE INDEX idx_trade_journal_ticker ON trade_journal(ticker);
+CREATE INDEX idx_trade_journal_date ON trade_journal(date DESC);
+
 -- RLS (Row Level Security) 활성화 (선택사항)
 -- ALTER TABLE watchlist ENABLE ROW LEVEL SECURITY;
 -- ALTER TABLE portfolio ENABLE ROW LEVEL SECURITY;

@@ -5,13 +5,32 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
-// 숫자 포맷팅 (한국 원화)
-export const formatKRW = (num: number): string => {
-  return new Intl.NumberFormat("ko-KR", {
-    style: "currency",
-    currency: "KRW",
-    maximumFractionDigits: 0,
-  }).format(num);
+// 숫자 포맷팅 (한국 원화) - 한국식 단위 표기
+export const formatKRW = (amount: number): string => {
+  if (amount >= 10000000000) {
+    // 100억 이상: "125억원"
+    const eok = Math.floor(amount / 100000000);
+    const man = Math.floor((amount % 100000000) / 10000);
+    if (man >= 1000) {
+      // 1000만원 이상이면 억 단위로 올림
+      return `${eok + 1}억원`;
+    }
+    return man > 0 ? `${eok}억 ${man.toLocaleString()}만원` : `${eok}억원`;
+  } else if (amount >= 100000000) {
+    // 1억~100억: "1억 2,500만원"
+    const eok = Math.floor(amount / 100000000);
+    const man = Math.floor((amount % 100000000) / 10000);
+    return man > 0 ? `${eok}억 ${man.toLocaleString()}만원` : `${eok}억원`;
+  } else if (amount >= 10000) {
+    // 1만~1억: "9,900만원"
+    return `${Math.floor(amount / 10000).toLocaleString()}만원`;
+  } else if (amount >= 0) {
+    // 1만 미만: "9,500원"
+    return `${amount.toLocaleString()}원`;
+  } else {
+    // 음수: "-125만원"
+    return `-${formatKRW(Math.abs(amount))}`;
+  }
 };
 
 // 숫자 포맷팅 (미국 달러)

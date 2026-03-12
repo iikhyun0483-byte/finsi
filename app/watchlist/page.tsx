@@ -11,6 +11,7 @@ interface WatchlistItem {
   symbol: string;
   name: string;
   assetType: "stock" | "crypto" | "commodity" | "bond" | "reit";
+  targetPrice?: number; // 목표가
 }
 
 export default function WatchlistPage() {
@@ -75,6 +76,30 @@ export default function WatchlistPage() {
   useEffect(() => {
     fetchPrices();
   }, [fetchPrices]);
+
+  // 목표가 알림 체크
+  useEffect(() => {
+    if (prices.size === 0) return;
+
+    watchlist.forEach((item) => {
+      if (!item.targetPrice) return;
+
+      const price = prices.get(item.symbol);
+      if (!price) return;
+
+      const currentPrice = price.price;
+
+      // 목표가 도달 시 알림
+      if (currentPrice >= item.targetPrice) {
+        if ('Notification' in window && Notification.permission === 'granted') {
+          new Notification(`🎯 목표가 도달: ${item.symbol}`, {
+            body: `현재가 $${currentPrice.toFixed(2)} → 목표가 $${item.targetPrice.toFixed(2)} 도달!`,
+            icon: '/icon-192x192.png',
+          });
+        }
+      }
+    });
+  }, [prices, watchlist]);
 
   // 관심 종목 저장
   const saveWatchlist = (newWatchlist: WatchlistItem[]) => {

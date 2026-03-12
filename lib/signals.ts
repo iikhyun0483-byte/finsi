@@ -8,6 +8,7 @@ export interface SignalInput {
   name: string;
   assetType: "stock" | "crypto" | "commodity" | "bond" | "reit";
   prices: number[]; // 최근 300일 종가
+  volumes?: number[]; // 거래량 (선택)
   macroIndicators: MacroIndicators;
 }
 
@@ -24,6 +25,14 @@ export interface SignalOutput {
   macd: number;
   price: number;
   highRisk?: boolean; // 암호화폐 HIGH RISK 배지
+
+  // 신규 추가 신호들
+  goldenCross?: boolean; // 골든크로스 발생
+  deadCross?: boolean; // 데드크로스 발생
+  volumeSpike?: boolean; // 거래량 급증
+  week52High?: boolean; // 52주 신고가
+  week52Low?: boolean; // 52주 신저가
+  bollingerRSI?: 'oversold' | 'overbought' | 'neutral'; // 볼린저+RSI 복합 신호
 }
 
 // Layer 1: 기술적 지표 (30%) - RSI + MACD + 볼린저밴드 + 골든/데드크로스
@@ -124,6 +133,78 @@ function calcLayer3Score(macroIndicators: MacroIndicators): number {
   return calcMacroScore(macroIndicators);
 }
 
+// ============ 신규 신호 감지 함수들 ============
+
+// 골든크로스/데드크로스 감지
+function detectCrossover(prices: number[]): { goldenCross: boolean; deadCross: boolean } {
+  const sma50 = calcSMA(prices, 50);
+  const sma200 = calcSMA(prices, 200);
+
+  const currentSMA50 = sma50[sma50.length - 1];
+  const previousSMA50 = sma50[sma50.length - 2];
+  const currentSMA200 = sma200[sma200.length - 1];
+  const previousSMA200 = sma200[sma200.length - 2];
+
+  // 골든크로스: 50일선이 200일선을 상향 돌파
+  const goldenCross = previousSMA50 !== null && previousSMA200 !== null && currentSMA50 !== null && currentSMA200 !== null &&
+    previousSMA50 < previousSMA200 && currentSMA50 > currentSMA200;
+
+  // 데드크로스: 50일선이 200일선을 하향 돌파
+  const deadCross = previousSMA50 !== null && previousSMA200 !== null && currentSMA50 !== null && currentSMA200 !== null &&
+    previousSMA50 > previousSMA200 && currentSMA50 < currentSMA200;
+
+  return { goldenCross, deadCross };
+}
+
+// 거래량 급증 감지 (평균 대비 2배 이상)
+function detectVolumeSpike(volumes: number[] | undefined): boolean {
+  if (!volumes || volumes.length < 21) return false;
+
+  const currentVolume = volumes[volumes.length - 1];
+  const avgVolume = volumes.slice(-21, -1).reduce((a, b) => a + b, 0) / 20;
+
+  return currentVolume >= avgVolume * 2;
+}
+
+// 52주 신고가/신저가 감지
+function detect52WeekHighLow(prices: number[]): { week52High: boolean; week52Low: boolean } {
+  if (prices.length < 252) return { week52High: false, week52Low: false };
+
+  const recent52Weeks = prices.slice(-252);
+  const currentPrice = prices[prices.length - 1];
+  const max = Math.max(...recent52Weeks);
+  const min = Math.min(...recent52Weeks);
+
+  return {
+    week52High: currentPrice >= max * 0.999, // 0.1% 오차 허용
+    week52Low: currentPrice <= min * 1.001,
+  };
+}
+
+// 볼린저밴드 + RSI 복합 신호
+function detectBollingerRSI(prices: number[]): 'oversold' | 'overbought' | 'neutral' {
+  const bollinger = calcBollinger(prices, 20, 2);
+  const rsiValues = calcRSI(prices, 14);
+
+  const currentPrice = prices[prices.length - 1];
+  const currentBand = bollinger[bollinger.length - 1];
+  const rsi = rsiValues[rsiValues.length - 1];
+
+  // 과매도: 볼린저 하단 + RSI 30 이하
+  if (currentBand.lower && currentPrice < currentBand.lower && rsi !== null && rsi < 30) {
+    return 'oversold';
+  }
+
+  // 과매수: 볼린저 상단 + RSI 70 이상
+  if (currentBand.upper && currentPrice > currentBand.upper && rsi !== null && rsi > 70) {
+    return 'overbought';
+  }
+
+  return 'neutral';
+}
+
+// ============================================
+
 // 최종 신호 생성
 export function generateSignal(input: SignalInput): SignalOutput {
   const layer1 = calcLayer1Score(input.prices);
@@ -140,6 +221,12 @@ export function generateSignal(input: SignalInput): SignalOutput {
   else if (finalScore >= 40) action = "관망";
   else action = "사지 마세요";
 
+  // 신규 신호 감지
+  const crossover = detectCrossover(input.prices);
+  const volumeSpike = detectVolumeSpike(input.volumes);
+  const week52 = detect52WeekHighLow(input.prices);
+  const bollingerRSI = detectBollingerRSI(input.prices);
+
   return {
     symbol: input.symbol,
     name: input.name,
@@ -153,6 +240,14 @@ export function generateSignal(input: SignalInput): SignalOutput {
     macd: Math.round(layer1.macd * 100) / 100,
     price: input.prices[input.prices.length - 1],
     highRisk: input.assetType === "crypto",
+
+    // 신규 신호들
+    goldenCross: crossover.goldenCross,
+    deadCross: crossover.deadCross,
+    volumeSpike,
+    week52High: week52.week52High,
+    week52Low: week52.week52Low,
+    bollingerRSI,
   };
 }
 

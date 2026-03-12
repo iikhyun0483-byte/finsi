@@ -41,4 +41,4 @@ Step 10: lib/signals.ts (0~100점 신호 엔진)
 Step 11: components/beginner/ 전체
 Step 12: API Routes 전체
 Step 13: 대시보드 + 오늘의신호 화면
-Step 14: Vercel 배포
+Step 14: Vercel 배포C

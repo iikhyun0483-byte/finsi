@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getYahooHistorical } from "@/lib/yahoo";
 import { getCryptoHistorical } from "@/lib/crypto";
 import { getAllMacroIndicators } from "@/lib/macro";
-import { generateSignal } from "@/lib/signals";
+import { generateSignalsEnhanced } from "@/lib/signals-enhanced";
 import { getRealtimePrices } from "@/lib/realtime-price";
 import { getUSDToKRW } from "@/lib/exchange";
 
@@ -68,14 +68,23 @@ export async function GET(request: Request) {
       });
     }
 
-    // 4. 신호 생성
-    const signal = generateSignal({
+    // 4. Enhanced 신호 생성 (펀더멘털 + 뉴스 + 리스크 포함)
+    const signals = await generateSignalsEnhanced([{
       symbol,
       name: symbol,
       assetType: assetType as any,
       prices,
       macroIndicators,
-    });
+    }]);
+
+    if (!signals || signals.length === 0) {
+      return NextResponse.json({
+        success: false,
+        error: `${symbol}: 신호 생성 실패`,
+      });
+    }
+
+    const signal = signals[0];
 
     // 5. 실시간 가격 조회
     const priceMap = await getRealtimePrices([symbol]);
@@ -95,7 +104,7 @@ export async function GET(request: Request) {
     // 7. 리스크 판단 (암호화폐 또는 점수가 낮은 경우)
     const highRisk = isCrypto || signal.score < 40;
 
-    // 8. 응답 데이터 구성
+    // 8. 응답 데이터 구성 (Enhanced 데이터 포함)
     const response = {
       success: true,
       signal: {
@@ -111,6 +120,14 @@ export async function GET(request: Request) {
         rsi: signal.rsi || 50,
         macd: signal.macd || 0,
         highRisk,
+        // Enhanced 데이터
+        fundamentals: signal.fundamentals || null,
+        fundamentalScore: signal.fundamentalScore || null,
+        news: signal.news || null,
+        riskProfile: signal.riskProfile || null,
+        cryptoBoost: signal.cryptoBoost || null,
+        leadingIndicators: signal.leadingIndicators || null,
+        correlationAdjustment: signal.correlationAdjustment || 0,
       },
     };
 

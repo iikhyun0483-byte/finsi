@@ -5,6 +5,8 @@ import { Card, CardHeader, CardTitle, CardContent } from "@/components/common/Ca
 import { Button } from "@/components/common/Button";
 import { formatKRW, formatPercent } from "@/lib/utils";
 import type { RealtimePrice } from "@/lib/realtime-price";
+import { applyVixFilter } from "@/lib/vix-filter";
+import { safeNum } from "@/lib/score-helpers";
 
 interface PortfolioItem {
   symbol: string;
@@ -20,6 +22,7 @@ export default function PortfolioPage() {
   const [loading, setLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
+  const [macro, setMacro] = useState<any>(null);
 
   // 추가 폼 상태
   const [newSymbol, setNewSymbol] = useState("");
@@ -79,6 +82,18 @@ export default function PortfolioPage() {
   useEffect(() => {
     fetchPrices();
   }, [fetchPrices]);
+
+  // 매크로 데이터 불러오기
+  useEffect(() => {
+    fetch("/api/market")
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.success) {
+          setMacro(data.macroIndicators);
+        }
+      })
+      .catch(console.error);
+  }, []);
 
   // 포트폴리오 저장
   const savePortfolio = (newPortfolio: PortfolioItem[]) => {
@@ -197,6 +212,24 @@ export default function PortfolioPage() {
         </div>
       </header>
 
+      {/* VIX EXTREME 경고 배너 */}
+      {safeNum(macro?.vix, 20) > 40 && (
+        <div style={{
+          width: '100%',
+          padding: '12px 20px',
+          background: 'rgba(255,60,60,0.15)',
+          borderBottom: '2px solid rgba(255,60,60,0.5)',
+          color: '#FF6060',
+          fontSize: 14,
+          fontWeight: 600,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+        }}>
+          ⚠ VIX 극단적 공포 구간 — 모든 신호 신뢰도 40% 감쇠 적용 중 (VIX: {macro?.vix?.toFixed(1)})
+        </div>
+      )}
+
       <main className="mx-auto max-w-7xl px-6 py-8">
         {/* 전체 요약 */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
@@ -294,16 +327,49 @@ export default function PortfolioPage() {
                       const profit = currentValue - investedValue;
                       const profitPercent = investedValue > 0 ? ((profit / investedValue) * 100) : 0;
 
+                      // 리스크 레벨 계산
+                      const holdingFilter = applyVixFilter({
+                        vix: safeNum(macro?.vix, 20),
+                        cryptoFearGreed: safeNum(macro?.fearGreed, 50),
+                        originalScore: 50,
+                        assetType: item.assetType === 'crypto' ? 'crypto' : 'stock',
+                      });
+
+                      const riskBadge = {
+                        LOW:     { text: '안전', color: '#00FF41', bg: 'rgba(0,255,65,0.1)' },
+                        MEDIUM:  { text: '보통', color: '#00FFD1', bg: 'rgba(0,255,209,0.1)' },
+                        HIGH:    { text: '주의', color: '#FFA500', bg: 'rgba(255,165,0,0.1)' },
+                        EXTREME: { text: '위험', color: '#FF4466', bg: 'rgba(255,68,102,0.15)' },
+                      }[holdingFilter.riskLevel];
+
                       return (
                         <tr key={i} className="border-b border-gray-800/50">
                           <td className="py-4 px-2">
-                            <div className="font-bold">{item.symbol}</div>
-                            <div className="text-xs text-gray-400">{item.name}</div>
-                            {priceData && (
-                              <div className={`text-xs ${priceData.changePercent >= 0 ? 'text-green-500' : 'text-red-500'}`}>
-                                {priceData.changePercent >= 0 ? '▲' : '▼'} {Math.abs(priceData.changePercent).toFixed(2)}%
+                            <div className="flex items-center gap-2">
+                              <div>
+                                <div className="font-bold">{item.symbol}</div>
+                                <div className="text-xs text-gray-400">{item.name}</div>
+                                {priceData && (
+                                  <div className={`text-xs ${priceData.changePercent >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                                    {priceData.changePercent >= 0 ? '▲' : '▼'} {Math.abs(priceData.changePercent).toFixed(2)}%
+                                  </div>
+                                )}
                               </div>
-                            )}
+                              <span style={{
+                                padding: '2px 8px',
+                                borderRadius: 4,
+                                fontSize: 11,
+                                fontWeight: 700,
+                                color: riskBadge.color,
+                                background: riskBadge.bg,
+                                border: `1px solid ${riskBadge.color}40`,
+                                fontFamily: 'IBM Plex Mono',
+                                animation: holdingFilter.riskLevel === 'EXTREME' ? 'pulse 1s infinite' : 'none',
+                                whiteSpace: 'nowrap',
+                              }}>
+                                {riskBadge.text}
+                              </span>
+                            </div>
                           </td>
                           <td className="text-right py-4 px-2">{item.quantity}</td>
                           <td className="text-right py-4 px-2">

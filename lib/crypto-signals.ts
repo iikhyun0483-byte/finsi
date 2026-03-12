@@ -76,19 +76,41 @@ export async function detectCryptoVolumeSpike(symbol: string): Promise<CryptoSig
 }
 
 /**
- * 암호화폐 전용 신호 개선 함수
+ * 암호화폐 전용 신호 개선 함수 (VIX, 공포탐욕지수 필터 적용)
  */
 export async function improveCryptoSignal(
   symbol: string,
-  baseScore: number
-): Promise<{ improvedScore: number; boost: CryptoSignalBoost }> {
+  baseScore: number,
+  vix?: number,
+  fearGreed?: number
+): Promise<{ improvedScore: number; boost: CryptoSignalBoost; reliability: string }> {
   const boost = await detectCryptoVolumeSpike(symbol);
 
-  // 기본 점수에 부스트 추가
-  const improvedScore = Math.min(100, baseScore + boost.boostScore);
+  let improvedScore = baseScore + boost.boostScore;
+  let reliability = 'normal';
+
+  // VIX 30 이상이면 암호화폐 신호 신뢰도 낮춤
+  if (vix !== undefined && vix >= 30) {
+    improvedScore = improvedScore * 0.7; // 30% 감소
+    reliability = 'low';
+    console.log(`⚠️ ${symbol}: VIX ${vix} → 신뢰도 낮춤 (${reliability})`);
+  }
+
+  // 공포탐욕지수 20 이하일 때만 매수 신호 강화
+  if (fearGreed !== undefined && fearGreed <= 20 && improvedScore >= 60) {
+    improvedScore = Math.min(100, improvedScore + 10); // +10점 보너스
+    reliability = 'high';
+    console.log(`✅ ${symbol}: 공포탐욕 ${fearGreed} → 매수 신호 강화`);
+  }
+
+  // 중기 신호만 사용 (단기 제거) - 1주 이상 데이터만 신뢰
+  // 이미 Klines에서 30일 데이터 사용 중이므로 추가 필터 불필요
+
+  improvedScore = Math.min(100, Math.max(0, Math.round(improvedScore)));
 
   return {
     improvedScore,
     boost,
+    reliability,
   };
 }
