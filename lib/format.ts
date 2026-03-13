@@ -1,26 +1,43 @@
-/**
- * FINSI 한국 금액 표기 유틸리티
- *
- * 올바른 표기: 4억 8,377만원
- * 잘못된 표기: ₩48377만
- */
+// lib/format.ts
+// 핀시 전역 포맷 유틸리티 — 절대 수정 금지
 
 export function formatKRW(amount: number): string {
-  if (amount >= 100000000) {
-    // 1억 이상
-    const eok = Math.floor(amount / 100000000);
-    const man = Math.floor((amount % 100000000) / 10000);
-    return man > 0 ? `${eok}억 ${man.toLocaleString('ko-KR')}만원` : `${eok}억원`;
-  } else if (amount >= 10000) {
-    // 1만 ~ 1억
-    return `${Math.floor(amount / 10000).toLocaleString('ko-KR')}만원`;
+  const abs = Math.abs(amount)
+  const sign = amount < 0 ? '-' : ''
+
+  if (abs >= 1_000_000_000_000) {
+    const jo = Math.floor(abs / 1_000_000_000_000)
+    const eok = Math.floor((abs % 1_000_000_000_000) / 100_000_000)
+    return `${sign}${jo}조 ${eok > 0 ? eok.toLocaleString() + '억원' : '원'}`
   }
-  // 1만 미만
-  return `${amount.toLocaleString('ko-KR')}원`;
+  if (abs >= 100_000_000) {
+    const eok = Math.floor(abs / 100_000_000)
+    const man = Math.floor((abs % 100_000_000) / 10_000)
+    return `${sign}${eok}억 ${man > 0 ? man.toLocaleString() + '만원' : '원'}`
+  }
+  if (abs >= 10_000) {
+    const man = Math.floor(abs / 10_000)
+    return `${sign}${man.toLocaleString()}만원`
+  }
+  return `${sign}${abs.toLocaleString()}원`
 }
 
-// 예시:
-// formatKRW(483770000) → "4억 8,377만원"
-// formatKRW(150000000) → "1억 5,000만원"
-// formatKRW(50000000)  → "5,000만원"
-// formatKRW(1500000)   → "150만원"
+export function formatUSD(amount: number): string {
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    maximumFractionDigits: 2,
+  }).format(amount)
+}
+
+export function formatPct(value: number, digits = 2): string {
+  return `${(value * 100).toFixed(digits)}%`
+}
+
+export function formatPctRaw(value: number, digits = 2): string {
+  return `${value.toFixed(digits)}%`
+}
+
+export function formatNumber(value: number, digits = 2): string {
+  return value.toLocaleString('ko-KR', { maximumFractionDigits: digits })
+}

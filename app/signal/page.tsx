@@ -22,6 +22,7 @@ import {
   buffettToScore,
   rateToScore,
 } from "@/lib/score-helpers";
+import { runEnsemble } from "@/lib/ensemble-engine";
 
 interface Signal {
   symbol: string;
@@ -361,6 +362,60 @@ export default function SignalPage() {
                         layer3={scoreOutput.layer3Score}
                         vixPenalty={scoreOutput.vixPenalty}
                       />
+
+                      {/* 앙상블 최종 판단 */}
+                      {(() => {
+                        const vixLevel = macro?.vix ?? 20;
+                        const regime = vixLevel > 30 ? 'crisis' : vixLevel > 20 ? 'neutral' : vixLevel < 15 ? 'bull' : 'neutral';
+                        const maSignal = signal.goldenCross ? 'buy' : signal.deadCross ? 'sell' : 'neutral';
+                        const volumeSignal = signal.volumeSpike ? 'surge' : 'normal';
+                        const kellyFraction = filtered.adjustedScore > 80 ? 0.2 : filtered.adjustedScore > 60 ? 0.15 : 0.1;
+
+                        const ensemble = runEnsemble({
+                          score: filtered.adjustedScore,
+                          kellyFraction,
+                          vixLevel,
+                          regime: regime as 'bull' | 'bear' | 'neutral' | 'crisis',
+                          rsi: signal.rsi,
+                          maSignal: maSignal as 'buy' | 'sell' | 'neutral',
+                          volumeSignal: volumeSignal as 'surge' | 'dry' | 'normal',
+                        });
+
+                        return (
+                          <div className="bg-[#1a2035] rounded-xl p-5">
+                            <h3 className="text-sm font-semibold text-gray-300 mb-3">🤖 앙상블 최종 판단</h3>
+                            <div className="flex items-center justify-between mb-3">
+                              <span className={`text-2xl font-bold ${
+                                ensemble.verdict.includes('매수') ? 'text-green-400' :
+                                ensemble.verdict.includes('매도') ? 'text-red-400' : 'text-yellow-400'
+                              }`}>{ensemble.verdict}</span>
+                              <span className="text-gray-400 text-sm">확신도 {ensemble.confidence}%</span>
+                            </div>
+                            <div className="space-y-1 mb-3">
+                              {ensemble.reasoning.map((r, idx) => (
+                                <p key={idx} className="text-gray-400 text-xs">• {r}</p>
+                              ))}
+                            </div>
+                            <div className="flex justify-between text-sm border-t border-gray-700 pt-3">
+                              <span className="text-gray-400">
+                                조정 Kelly: <span className="text-orange-400 font-medium">
+                                  {(ensemble.finalKelly * 100).toFixed(1)}%
+                                </span>
+                              </span>
+                              <span className={`text-xs px-2 py-0.5 rounded-full ${
+                                ensemble.riskLevel === 'extreme' ? 'bg-red-900 text-red-400' :
+                                ensemble.riskLevel === 'high' ? 'bg-orange-900 text-orange-400' :
+                                ensemble.riskLevel === 'medium' ? 'bg-yellow-900 text-yellow-400' :
+                                'bg-green-900 text-green-400'
+                              }`}>
+                                {ensemble.riskLevel === 'extreme' ? '극단 위험' :
+                                 ensemble.riskLevel === 'high' ? '높은 위험' :
+                                 ensemble.riskLevel === 'medium' ? '중간 위험' : '낮은 위험'}
+                              </span>
+                            </div>
+                          </div>
+                        );
+                      })()}
                     </div>
                   </div>
                 );

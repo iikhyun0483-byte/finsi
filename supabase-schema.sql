@@ -134,6 +134,39 @@ CREATE INDEX idx_trade_journal_date ON trade_journal(date DESC);
 -- ALTER TABLE watchlist ENABLE ROW LEVEL SECURITY;
 -- ALTER TABLE portfolio ENABLE ROW LEVEL SECURITY;
 
+-- 9. 시나리오 저장 테이블
+CREATE TABLE IF NOT EXISTS saved_scenarios (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  type VARCHAR(50) NOT NULL, -- montecarlo, lifecycle, loan, buyvsrent, business, compare
+  label TEXT NOT NULL,
+  input_data JSONB NOT NULL,
+  result_data JSONB NOT NULL,
+  user_id TEXT NOT NULL DEFAULT 'anonymous',
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+CREATE INDEX idx_saved_scenarios_type ON saved_scenarios(type);
+CREATE INDEX idx_saved_scenarios_user ON saved_scenarios(user_id);
+CREATE INDEX idx_saved_scenarios_created ON saved_scenarios(created_at DESC);
+
+ALTER TABLE saved_scenarios ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "누구나 저장 가능" ON saved_scenarios FOR ALL USING (true);
+
+-- 10. 재무 생존 분석 스냅샷 테이블
+CREATE TABLE IF NOT EXISTS cashflow_snapshots (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  snapshot_date DATE NOT NULL DEFAULT CURRENT_DATE,
+  input_data JSONB NOT NULL,
+  result_data JSONB NOT NULL,
+  net_cash INTEGER,
+  liquidity_months NUMERIC,
+  net_worth INTEGER,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_cashflow_user_date ON cashflow_snapshots(user_id, snapshot_date DESC);
+
 COMMENT ON TABLE signals IS '실시간 투자 신호 (0~100점 스코어링)';
 COMMENT ON TABLE price_history IS '자산별 가격 히스토리 (OHLCV)';
 COMMENT ON TABLE watchlist IS '사용자 관심 종목';
@@ -141,3 +174,5 @@ COMMENT ON TABLE portfolio IS '사용자 포트폴리오';
 COMMENT ON TABLE backtest_results IS '백테스팅 전략 결과';
 COMMENT ON TABLE macro_indicators IS '거시경제 지표 (공포탐욕지수, VIX, 금리 등)';
 COMMENT ON TABLE exchange_rates IS '실시간 환율 (USD/KRW)';
+COMMENT ON TABLE saved_scenarios IS '계산 시나리오 저장 (lifecycle, loan, montecarlo 등)';
+COMMENT ON TABLE cashflow_snapshots IS '재무 생존 분석 월별 스냅샷 (현금흐름, 유동성, 순자산 추이)';

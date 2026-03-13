@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { Activity, TrendingUp, Zap, BarChart3, Globe, Briefcase, Star, BookOpen, Map, Settings, Bot, Book, FileText } from "lucide-react";
+import { Activity, TrendingUp, Zap, BarChart3, Globe, Briefcase, Star, BookOpen, Map, Settings, Bot, Book, FileText, AlertTriangle } from "lucide-react";
 import { getIndicatorLabel } from "@/lib/design-system";
 import { ParticleBackground } from "@/components/effects/ParticleBackground";
 import { CountUp } from "@/components/effects/CountUp";
@@ -100,12 +100,22 @@ export default function Home() {
             { href: "/signal", icon: TrendingUp, label: "오늘의 신호", desc: "Today's Signals" },
             { href: "/backtest", icon: Zap, label: "백테스팅", desc: "Strategy Test" },
             { href: "/analyze", icon: BarChart3, label: "종목 분석", desc: "Asset Analysis" },
+            { href: "/factors", icon: BarChart3, label: "🔬 팩터 스크리너", desc: "Factor Screener" },
+            { href: "/stat-arb", icon: TrendingUp, label: "⚡ 차익거래", desc: "Stat Arbitrage" },
+            { href: "/risk-control", icon: AlertTriangle, label: "🛡️ 리스크 제어", desc: "Risk Control" },
+            { href: "/trade-calc", icon: BarChart3, label: "🧮 행동 계산기", desc: "Trade Calculator" },
             { href: "/market", icon: Globe, label: "시장 현황", desc: "Market Overview" },
             { href: "/portfolio", icon: Briefcase, label: "내 포트폴리오", desc: "My Portfolio" },
+            { href: "/assets", icon: Briefcase, label: "자산 관리", desc: "Asset Management" },
             { href: "/watchlist", icon: Star, label: "관심 종목", desc: "Watchlist" },
             { href: "/journal", icon: FileText, label: "투자 일지", desc: "Trade Journal" },
+            { href: "/my-patterns", icon: BarChart3, label: "📊 내 패턴", desc: "My Patterns" },
             { href: "/learn", icon: BookOpen, label: "투자 학습", desc: "Learn" },
             { href: "/plan", icon: Map, label: "투자 계획", desc: "Investment Plan" },
+            { href: "/lifecycle", icon: FileText, label: "🧬 인생설계", desc: "Life Planning" },
+            { href: "/finance", icon: FileText, label: "💰 재무계산기", desc: "Finance Calculator" },
+            { href: "/compare", icon: BarChart3, label: "⚖️ A vs B 비교", desc: "Compare Scenarios" },
+            { href: "/cashflow", icon: AlertTriangle, label: "🔴 재무 생존", desc: "Survival Analysis" },
             { href: "/knowledge", icon: Book, label: "용어 사전", desc: "Glossary" },
             { href: "/auto-trade", icon: Bot, label: "자동매매", desc: "Auto Trading" },
             { href: "/settings", icon: Settings, label: "설정", desc: "Settings" },

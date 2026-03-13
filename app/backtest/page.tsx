@@ -630,7 +630,7 @@ export default function BacktestPage() {
                       <CardTitle className="text-sm text-orange-400">💰 거래 비용 분석</CardTitle>
                     </CardHeader>
                     <CardContent>
-                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
                         <div>
                           <div className="text-xs text-gray-400 mb-1">총 수수료</div>
                           <div className="text-xl font-bold text-red-400">
@@ -650,6 +650,16 @@ export default function BacktestPage() {
                           </div>
                         </div>
                       </div>
+                      {result.stats.actualReturn !== undefined && (
+                        <div className="pt-4 border-t border-orange-500/20">
+                          <div className="flex justify-between items-center">
+                            <span className="text-xs text-gray-400">실제 수익률 (수수료·세금 차감)</span>
+                            <span className={`text-lg font-bold ${parseFloat(result.stats.actualReturn) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                              {parseFloat(result.stats.actualReturn) >= 0 ? '+' : ''}{parseFloat(result.stats.actualReturn).toFixed(2)}%
+                            </span>
+                          </div>
+                        </div>
+                      )}
                     </CardContent>
                   </Card>
                 )}

@@ -5,6 +5,7 @@ import { getAllMacroIndicators } from "@/lib/macro";
 import { generateSignalsEnhanced, SignalInput } from "@/lib/signals-enhanced";
 import { getUSDToKRW } from "@/lib/exchange";
 import { supabase } from "@/lib/supabase";
+import { getEnabledSymbols, getSystemConfig } from "@/lib/config";
 
 export const dynamic = "force-dynamic";
 
@@ -37,96 +38,85 @@ function sleep(ms: number) {
 
 export async function GET() {
   try {
+    // 0. 동적 설정 로드 (하드코딩 제거)
+    console.log("⚙️ 시스템 설정 로드 중...");
+    const config = await getSystemConfig();
+    const allSymbols = await getEnabledSymbols();
+
+    console.log(`✅ 활성 심볼: ${allSymbols.length}개`);
+    console.log(`⚙️ API 재시도: ${config.API_RETRY_COUNT}회, 딜레이: ${config.API_RETRY_DELAY_MS}ms`);
+
     // 1. 매크로 지표 조회
     const macroIndicators = await getAllMacroIndicators();
 
     // 2. 환율 조회
     const exchangeRate = await getUSDToKRW();
 
-    // 3. 자산별 실시간 데이터 수집 (재시도 로직 포함)
+    // 3. 자산별 실시간 데이터 수집 (동적 심볼 사용)
     const signals: SignalInput[] = [];
 
-    // 자산 타입별로 균형있게 선택
-    const selectedETFs = [
-      // 주식 (4개)
-      "SPY",  // S&P 500
-      "QQQ",  // NASDAQ 100
-      "DIA",  // 다우존스
-      "IWM",  // 러셀 2000
-      // 원자재 (4개)
-      "GLD",  // 금
-      "SLV",  // 은
-      "USO",  // 원유
-      "XLE",  // 에너지 섹터
-      // 채권 (4개)
-      "TLT",  // 장기 국채
-      "IEF",  // 중기 국채
-      "SHY",  // 단기 국채
-      "AGG",  // 종합 채권
-      // 리츠 (2개)
-      "VNQ",  // 부동산 리츠
-      "IYR",  // 미국 부동산
-    ];
+    // 주식/ETF/채권/리츠 심볼 (crypto 제외)
+    const stockSymbols = allSymbols
+      .filter((s) => s.asset_type !== "crypto")
+      .slice(0, config.MAX_SIGNALS_COUNT - 8); // 암호화폐 8개 제외한 나머지
 
     console.log("📊 Yahoo Finance API 호출 시작...");
-    // 미국 주식 ETF (재시도 + 딜레이)
-    for (let i = 0; i < selectedETFs.length; i++) {
-      const symbol = selectedETFs[i];
-      const info = MAJOR_ETFS[symbol as keyof typeof MAJOR_ETFS];
-      if (!info) continue;
+    // 미국 주식 ETF (동적 심볼 사용)
+    for (let i = 0; i < stockSymbols.length; i++) {
+      const symbolConfig = stockSymbols[i];
 
       const historical = await fetchWithRetry(
-        () => getYahooHistorical(symbol, "1y"),
-        3,
-        500
+        () => getYahooHistorical(symbolConfig.symbol, "1y"),
+        config.API_RETRY_COUNT,
+        config.API_RETRY_DELAY_MS
       );
 
       if (historical && historical.length >= 200) {
         const prices = historical.map((h) => h.close);
         signals.push({
-          symbol,
-          name: info.name,
-          assetType: info.category as any,
+          symbol: symbolConfig.symbol,
+          name: symbolConfig.name,
+          assetType: symbolConfig.asset_type as any,
           prices,
           macroIndicators,
         });
-        console.log(`✅ ${symbol} 데이터 수집 완료 (${historical.length}일)`);
+        console.log(`✅ ${symbolConfig.symbol} 데이터 수집 완료 (${historical.length}일)`);
       } else {
-        console.warn(`⚠️ ${symbol} 데이터 부족 또는 실패`);
+        console.warn(`⚠️ ${symbolConfig.symbol} 데이터 부족 또는 실패`);
       }
 
-      // Rate limit 방지 (100ms 딜레이)
-      if (i < selectedETFs.length - 1) {
-        await sleep(100);
+      // Rate limit 방지 (동적 딜레이)
+      if (i < stockSymbols.length - 1) {
+        await sleep(config.API_CALL_DELAY_MS);
       }
     }
 
-    console.log("🪙 Binance API 호출 시작 (모든 암호화폐 복원)...");
-    // 암호화폐 (전체 8개 - Binance는 rate limit 관대)
-    const cryptoEntries = Object.entries(MAJOR_CRYPTOS);
+    console.log("🪙 Binance API 호출 시작 (동적 심볼)...");
+    // 암호화폐 (동적 설정에서 로드)
+    const cryptoSymbols = allSymbols.filter((s) => s.asset_type === "crypto");
 
     // Binance는 병렬 조회 가능 (rate limit이 관대함)
-    const cryptoPromises = cryptoEntries.map(async ([key, info]) => {
-      console.log(`🪙 ${info.symbol} 데이터 요청 중...`);
+    const cryptoPromises = cryptoSymbols.map(async (symbolConfig) => {
+      console.log(`🪙 ${symbolConfig.symbol} 데이터 요청 중...`);
 
       const historical = await fetchWithRetry(
-        () => getCryptoHistorical(info.symbol, 365),
-        3,
-        500
+        () => getCryptoHistorical(symbolConfig.symbol, 365),
+        config.API_RETRY_COUNT,
+        config.API_RETRY_DELAY_MS
       );
 
       if (historical && historical.length >= 200) {
         const prices = historical.map((h) => h.price);
-        console.log(`✅ ${info.symbol} 데이터 수집 완료 (${historical.length}일)`);
+        console.log(`✅ ${symbolConfig.symbol} 데이터 수집 완료 (${historical.length}일)`);
         return {
-          symbol: info.symbol,
-          name: info.name,
+          symbol: symbolConfig.symbol,
+          name: symbolConfig.name,
           assetType: "crypto" as const,
           prices,
           macroIndicators,
         };
       } else {
-        console.warn(`⚠️ ${info.symbol} 데이터 부족 또는 실패 (${historical?.length || 0}일)`);
+        console.warn(`⚠️ ${symbolConfig.symbol} 데이터 부족 또는 실패 (${historical?.length || 0}일)`);
         return null;
       }
     });

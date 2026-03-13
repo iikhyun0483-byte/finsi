@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
+import { OnboardingGuide } from "@/components/OnboardingGuide";
 
 export const metadata: Metadata = {
   title: "FINSI - 퀀트 투자 자동화",
@@ -26,7 +27,10 @@ export default function RootLayout({
 }) {
   return (
     <html lang="ko" className="dark">
-      <body>{children}</body>
+      <body>
+        <OnboardingGuide />
+        {children}
+      </body>
     </html>
   );
 }
