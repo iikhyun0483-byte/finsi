@@ -20,6 +20,8 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       success: true,
       fundamentals,
+      // factors 페이지 호환성 - 최상위에도 모든 필드 노출
+      ...fundamentals,
     });
   } catch (error) {
     console.error("Fundamentals API error:", error);

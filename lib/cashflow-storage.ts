@@ -22,44 +22,59 @@ export async function saveSnapshot(
   input: CashflowInput,
   result: CashflowResult
 ): Promise<{ error: string | null }> {
-  // result에서 함수 제거 (JSON 직렬화 불가)
-  const { extraRepaymentEffect, ...resultData } = result
+  try {
+    // result에서 함수 제거 (JSON 직렬화 불가)
+    const { extraRepaymentEffect, ...resultData } = result
 
-  const { error } = await supabase
-    .from('cashflow_snapshots')
-    .upsert({
-      user_id: userId,
-      snapshot_date: new Date().toISOString().split('T')[0],
-      input_data: input,
-      result_data: resultData,
-      net_cash: result.monthly.netCash,
-      liquidity_months: result.liquidity,
-      net_worth: result.future[0]?.nominalNetWorth ?? 0,
-    }, { onConflict: 'user_id,snapshot_date' })
+    const { error } = await supabase
+      .from('cashflow_snapshots')
+      .upsert({
+        user_id: userId,
+        snapshot_date: new Date().toISOString().split('T')[0],
+        input_data: input,
+        result_data: resultData,
+        net_cash: result.monthly.netCash,
+        liquidity_months: result.liquidity,
+        net_worth: result.future[0]?.nominalNetWorth ?? 0,
+      }, { onConflict: 'user_id,snapshot_date' })
 
-  return { error: error?.message ?? null }
+    return { error: error?.message ?? null }
+  } catch (e) {
+    console.warn('Supabase not configured:', e)
+    return { error: null }
+  }
 }
 
 export async function loadHistory(userId: string): Promise<CashflowSnapshot[]> {
-  const { data, error } = await supabase
-    .from('cashflow_snapshots')
-    .select('id, snapshot_date, net_cash, liquidity_months, net_worth, input_data, result_data')
-    .eq('user_id', userId)
-    .order('snapshot_date', { ascending: false })
-    .limit(12)
+  try {
+    const { data, error } = await supabase
+      .from('cashflow_snapshots')
+      .select('id, snapshot_date, net_cash, liquidity_months, net_worth, input_data, result_data')
+      .eq('user_id', userId)
+      .order('snapshot_date', { ascending: false })
+      .limit(12)
 
-  if (error || !data) return []
-  return data as CashflowSnapshot[]
+    if (error || !data) return []
+    return data as CashflowSnapshot[]
+  } catch (e) {
+    console.warn('Supabase not configured:', e)
+    return []
+  }
 }
 
 export async function loadLatest(userId: string): Promise<CashflowSnapshot | null> {
-  const { data } = await supabase
-    .from('cashflow_snapshots')
-    .select('*')
-    .eq('user_id', userId)
-    .order('snapshot_date', { ascending: false })
-    .limit(1)
-    .single()
+  try {
+    const { data } = await supabase
+      .from('cashflow_snapshots')
+      .select('*')
+      .eq('user_id', userId)
+      .order('snapshot_date', { ascending: false })
+      .limit(1)
+      .single()
 
-  return data ?? null
+    return data ?? null
+  } catch (e) {
+    console.warn('Supabase not configured:', e)
+    return null
+  }
 }

@@ -6,6 +6,28 @@ import type { CashflowInput, CashflowResult } from '@/lib/cashflow-engine'
 
 type InputMode = 'simple' | 'detail'
 
+// InputRow를 컴포넌트 외부로 이동 (포커스 유지)
+const InputRow = ({ label, field, unit, placeholder = '0', value, onChange }: {
+  label: string
+  field: string
+  unit: string
+  placeholder?: string
+  value: string
+  onChange: (field: string, value: string) => void
+}) => (
+  <div className="flex items-center gap-2">
+    <label className="text-gray-400 text-xs w-32 flex-shrink-0">{label}</label>
+    <input
+      type="number"
+      value={value}
+      onChange={e => onChange(field, e.target.value)}
+      placeholder={placeholder}
+      className="flex-1 bg-gray-800 rounded px-3 py-2 text-white text-sm outline-none focus:ring-1 focus:ring-orange-500 min-w-0"
+    />
+    <span className="text-gray-500 text-xs w-8 flex-shrink-0">{unit}</span>
+  </div>
+)
+
 export default function CashflowPage() {
   const [mode, setMode] = useState<InputMode>('simple')
   const [result, setResult] = useState<CashflowResult | null>(null)
@@ -95,8 +117,12 @@ export default function CashflowPage() {
       const data = await res.json()
       if (data.error) { setError(data.error); return }
       setResult(data)
-      // 자동 저장
-      await saveSnapshot(userId, input, data)
+      // 자동 저장 (Supabase 에러 무시)
+      try {
+        await saveSnapshot(userId, input, data)
+      } catch (e) {
+        console.warn('Snapshot save failed (ignored):', e)
+      }
     } catch (e) {
       setError((e as Error).message)
     } finally {
@@ -105,7 +131,9 @@ export default function CashflowPage() {
   }, [s, userId])
 
   useEffect(() => {
-    loadHistory(userId).then(setHistory)
+    loadHistory(userId)
+      .then(setHistory)
+      .catch(e => console.warn('History load failed (ignored):', e))
   }, [userId])
 
   function handleChange(field: string, value: string) {
@@ -151,22 +179,6 @@ export default function CashflowPage() {
     : 'text-red-400'
     : 'text-gray-400'
 
-  const InputRow = ({ label, field, unit, placeholder = '0' }: {
-    label: string; field: string; unit: string; placeholder?: string
-  }) => (
-    <div className="flex items-center gap-2">
-      <label className="text-gray-400 text-xs w-32 flex-shrink-0">{label}</label>
-      <input
-        type="number"
-        value={s[field as keyof typeof s]}
-        onChange={e => handleChange(field, e.target.value)}
-        placeholder={placeholder}
-        className="flex-1 bg-gray-800 rounded px-3 py-2 text-white text-sm outline-none focus:ring-1 focus:ring-orange-500 min-w-0"
-      />
-      <span className="text-gray-500 text-xs w-8 flex-shrink-0">{unit}</span>
-    </div>
-  )
-
   return (
     <div className="min-h-screen bg-[#0a0e1a] text-white p-4 md:p-6">
       <div className="max-w-6xl mx-auto">
@@ -204,57 +216,57 @@ export default function CashflowPage() {
             {/* 수입 */}
             <div className="bg-gray-900 rounded-xl p-4 space-y-2">
               <p className="text-orange-400 text-xs font-medium">수입</p>
-              <InputRow label="월수입 (세전)" field="monthlyIncome" unit="원" />
-              <InputRow label="기타수입 (월)" field="otherIncome" unit="원" />
+              <InputRow label="월수입 (세전)" field="monthlyIncome" unit="원" value={s.monthlyIncome} onChange={handleChange} />
+              <InputRow label="기타수입 (월)" field="otherIncome" unit="원" value={s.otherIncome} onChange={handleChange} />
             </div>
 
             {/* 지출 */}
             <div className="bg-gray-900 rounded-xl p-4 space-y-2">
               <p className="text-orange-400 text-xs font-medium">지출</p>
-              <InputRow label="월 고정지출" field="fixedExpense" unit="원" />
-              <InputRow label="월 변동지출" field="variableExpense" unit="원" />
+              <InputRow label="월 고정지출" field="fixedExpense" unit="원" value={s.fixedExpense} onChange={handleChange} />
+              <InputRow label="월 변동지출" field="variableExpense" unit="원" value={s.variableExpense} onChange={handleChange} />
             </div>
 
             {/* 부채 */}
             <div className="bg-gray-900 rounded-xl p-4 space-y-2">
               <p className="text-orange-400 text-xs font-medium">부채 (없으면 0)</p>
-              <InputRow label="부채명" field="debtName" unit="" placeholder="예: 신용대출" />
-              <InputRow label="현재 잔액" field="totalDebt" unit="원" />
-              <InputRow label="연이자율" field="debtRate" unit="%" />
-              <InputRow label="월 납입액" field="monthlyRepayment" unit="원" />
+              <InputRow label="부채명" field="debtName" unit="" value={s.debtName} onChange={handleChange} placeholder="예: 신용대출" />
+              <InputRow label="현재 잔액" field="totalDebt" unit="원" value={s.totalDebt} onChange={handleChange} />
+              <InputRow label="연이자율" field="debtRate" unit="%" value={s.debtRate} onChange={handleChange} />
+              <InputRow label="월 납입액" field="monthlyRepayment" unit="원" value={s.monthlyRepayment} onChange={handleChange} />
             </div>
 
             {/* 자산 */}
             <div className="bg-gray-900 rounded-xl p-4 space-y-2">
               <p className="text-orange-400 text-xs font-medium">자산</p>
-              <InputRow label="자산명" field="assetName" unit="" placeholder="예: 금융자산" />
-              <InputRow label="현재 가치" field="currentAssets" unit="원" />
-              <InputRow label="예상 연수익률" field="assetReturn" unit="%" />
-              <InputRow label="비상금" field="emergencyFund" unit="원" />
+              <InputRow label="자산명" field="assetName" unit="" value={s.assetName} onChange={handleChange} placeholder="예: 금융자산" />
+              <InputRow label="현재 가치" field="currentAssets" unit="원" value={s.currentAssets} onChange={handleChange} />
+              <InputRow label="예상 연수익률" field="assetReturn" unit="%" value={s.assetReturn} onChange={handleChange} />
+              <InputRow label="비상금" field="emergencyFund" unit="원" value={s.emergencyFund} onChange={handleChange} />
             </div>
 
             {/* 목표 + 거시 */}
             <div className="bg-gray-900 rounded-xl p-4 space-y-2">
               <p className="text-orange-400 text-xs font-medium">목표 / 거시변수</p>
-              <InputRow label="목표금액" field="goalAmount" unit="원" />
-              <InputRow label="목표시점" field="goalYears" unit="년후" />
-              <InputRow label="물가상승률" field="inflationRate" unit="%" placeholder="3" />
-              <InputRow label="임금상승률" field="salaryGrowthRate" unit="%" placeholder="2" />
+              <InputRow label="목표금액" field="goalAmount" unit="원" value={s.goalAmount} onChange={handleChange} />
+              <InputRow label="목표시점" field="goalYears" unit="년후" value={s.goalYears} onChange={handleChange} />
+              <InputRow label="물가상승률" field="inflationRate" unit="%" value={s.inflationRate} onChange={handleChange} placeholder="3" />
+              <InputRow label="임금상승률" field="salaryGrowthRate" unit="%" value={s.salaryGrowthRate} onChange={handleChange} placeholder="2" />
             </div>
 
             {/* 리스크 파라미터 — 사용자 입력 */}
             <div className="bg-gray-900 rounded-xl p-4 space-y-2">
               <p className="text-orange-400 text-xs font-medium">리스크 시나리오 파라미터</p>
-              <InputRow label="긴급의료비" field="emergencyMedicalCost" unit="만원" placeholder="500" />
-              <InputRow label="자산하락 시나리오" field="assetDropPercent" unit="%" placeholder="30" />
-              <InputRow label="금리상승 시나리오" field="rateHikePercent" unit="%" placeholder="2" />
+              <InputRow label="긴급의료비" field="emergencyMedicalCost" unit="만원" value={s.emergencyMedicalCost} onChange={handleChange} placeholder="500" />
+              <InputRow label="자산하락 시나리오" field="assetDropPercent" unit="%" value={s.assetDropPercent} onChange={handleChange} placeholder="30" />
+              <InputRow label="금리상승 시나리오" field="rateHikePercent" unit="%" value={s.rateHikePercent} onChange={handleChange} placeholder="2" />
             </div>
 
             {/* 또래 비교 — 선택 입력, 출처 필수 */}
             <div className="bg-gray-900 rounded-xl p-4 space-y-2">
               <p className="text-orange-400 text-xs font-medium">또래 비교 <span className="text-gray-500">(선택 — 출처 입력 시 표시)</span></p>
-              <InputRow label="또래 평균 유동성" field="benchmarkLiquidity" unit="개월" />
-              <InputRow label="또래 평균 순자산" field="benchmarkNetWorth" unit="원" />
+              <InputRow label="또래 평균 유동성" field="benchmarkLiquidity" unit="개월" value={s.benchmarkLiquidity} onChange={handleChange} />
+              <InputRow label="또래 평균 순자산" field="benchmarkNetWorth" unit="원" value={s.benchmarkNetWorth} onChange={handleChange} />
               <div className="flex items-center gap-2">
                 <label className="text-gray-400 text-xs w-32 flex-shrink-0">출처</label>
                 <input

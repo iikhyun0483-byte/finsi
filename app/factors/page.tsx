@@ -105,10 +105,10 @@ export default function FactorsPage() {
                       <span className="text-white text-xs font-medium">{FACTOR_META[k].label}</span>
                       <p className="text-gray-600 text-xs">{FACTOR_META[k].ref}</p>
                     </div>
-                    <span className="text-orange-400 text-xs font-bold">{(weights[k]*100).toFixed(0)}%</span>
+                    <span className="text-orange-400 text-xs font-bold">{((weights[k] ?? 0)*100).toFixed(0)}%</span>
                   </div>
                   <input type="range" min={0} max={100} step={5}
-                    value={weights[k] * 100}
+                    value={(weights[k] ?? 0) * 100}
                     onChange={e => setWeights(p => ({ ...p, [k]: Number(e.target.value) / 100 }))}
                     className="w-full accent-orange-500"
                   />
@@ -118,9 +118,9 @@ export default function FactorsPage() {
             </div>
 
             <div className="bg-gray-900 rounded-xl p-4">
-              <p className="text-orange-400 text-xs font-semibold mb-1">매수 후보: 상위 {topPct}%</p>
+              <p className="text-orange-400 text-xs font-semibold mb-1">매수 후보: 상위 {topPct ?? 20}%</p>
               <input type="range" min={5} max={30} step={5}
-                value={topPct}
+                value={topPct ?? 20}
                 onChange={e => setTopPct(Number(e.target.value))}
                 className="w-full accent-orange-500"
               />
@@ -137,9 +137,9 @@ export default function FactorsPage() {
               </p>
             </div>
 
-            <button onClick={runScreen} disabled={loading || !weightOk}
+            <button onClick={runScreen} disabled={loading}
               className="w-full py-3 bg-orange-500 hover:bg-orange-600 disabled:opacity-40 rounded-xl font-semibold text-sm transition-colors">
-              {loading ? '스크리닝 중...' : '팩터 스크리닝 실행'}
+              {loading ? '스크리닝 중...' : `팩터 스크리닝 실행 (합계: ${(totalW * 100).toFixed(0)}%)`}
             </button>
 
             {error && (

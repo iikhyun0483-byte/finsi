@@ -1,6 +1,27 @@
 // app/api/signal-tracking/route.ts
 import { NextRequest, NextResponse } from 'next/server'
 import { recordSignal, updateOutcomes, getAccuracy, backfillSignals } from '@/lib/signal-tracker'
+import { createClient } from '@supabase/supabase-js'
+
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
+)
+
+export async function GET(req: NextRequest) {
+  const { searchParams } = new URL(req.url)
+  const action = searchParams.get('action')
+
+  if (action === 'count') {
+    const { count } = await supabase
+      .from('signal_tracking')
+      .select('*', { count: 'exact', head: true })
+      .not('is_correct_7d', 'is', null)
+    return NextResponse.json({ count: count ?? 0 })
+  }
+
+  return NextResponse.json({ error: 'unknown action' }, { status: 400 })
+}
 
 export async function POST(req: NextRequest) {
   try {
