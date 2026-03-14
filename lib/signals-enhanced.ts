@@ -7,6 +7,8 @@ import { getNewsSentiment, type NewsSentiment } from "./news-sentiment";
 import { improveCryptoSignal, type CryptoSignalBoost } from "./crypto-signals";
 import { createRiskProfile, type RiskProfile } from "./risk-management";
 import { getLeadingIndicatorScore, type LeadingIndicatorScore } from "./leading-indicators";
+import { detectRegime, type RegimeResult } from "./regime-detection";
+import { runEnsemble, type EnsembleOutput } from "./ensemble-engine";
 
 export interface SignalInput {
   symbol: string;
@@ -50,6 +52,10 @@ export interface SignalOutputEnhanced {
   week52High?: boolean;
   week52Low?: boolean;
   bollingerRSI?: 'oversold' | 'overbought' | 'neutral';
+
+  // 레짐 감지 및 앙상블 결과
+  regimeDetection?: RegimeResult;
+  ensembleOutput?: EnsembleOutput;
 }
 
 // Layer 1: 기술적 지표 (30%)
@@ -90,7 +96,7 @@ function calcLayer1Score(prices: number[]): { score: number; rsi: number; macd: 
   }
 
   // 골든/데드크로스
-  const sma50 = calcSMA(prices.slice(-100), 50);
+  const sma50 = calcSMA(prices, 50);
   const sma200 = calcSMA(prices, 200);
 
   if (sma50.length > 0 && sma200.length > 0) {
@@ -388,6 +394,37 @@ export async function generateSignalEnhanced(
   const week52 = detect52WeekHighLow(prices);
   const bollingerRSI = detectBollingerRSI(prices);
 
+  // 레짐 감지 (가격 수익률 기반)
+  let regimeDetection: RegimeResult | undefined;
+  if (prices.length >= 63) {
+    const returns = prices.slice(-63).map((p, i, arr) =>
+      i === 0 ? 0 : (p - arr[i - 1]) / arr[i - 1]
+    );
+    regimeDetection = detectRegime({
+      returns,
+      vix: macroIndicators.vix,
+      lookbackDays: 63,
+      tradingDaysPerYear: 252,
+    });
+  }
+
+  // 앙상블 판단
+  let ensembleOutput: EnsembleOutput | undefined;
+  if (regimeDetection && riskProfile) {
+    ensembleOutput = runEnsemble({
+      score: finalScore,
+      kellyFraction: riskProfile.kellyPercentage / 100,
+      vixLevel: macroIndicators.vix,
+      regime: regimeDetection.current,
+      rsi: layer1.rsi,
+      maSignal: crossover.goldenCross ? 'buy' : crossover.deadCross ? 'sell' : 'neutral',
+      volumeSignal: volumeSpike ? 'surge' : 'normal',
+    });
+
+    // 앙상블 결과로 최종 액션 재조정
+    action = ensembleOutput.verdict;
+  }
+
   return {
     symbol,
     name,
@@ -419,6 +456,10 @@ export async function generateSignalEnhanced(
     week52High: week52.week52High,
     week52Low: week52.week52Low,
     bollingerRSI,
+
+    // 레짐 및 앙상블
+    regimeDetection,
+    ensembleOutput,
   };
 }
 

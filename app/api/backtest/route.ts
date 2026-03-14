@@ -354,26 +354,10 @@ export async function POST(request: NextRequest) {
       slippage,
     });
 
-    // 실제 수익률 계산 (수수료/세금/슬리피지 차감)
-    const mappedAssetType = assetType === 'crypto' ? 'crypto' : 'usStock';
-    const costs = TRADING_COSTS[mappedAssetType];
-    const theoreticalReturn = parseFloat(result.stats.totalReturn) / 100;
-    const tradeCount = result.stats.totalTrades;
-    const roundTripCost = (costs.buyFee + costs.sellFee + costs.slippage * 2) * tradeCount;
-    const taxDrag = theoreticalReturn > 0 ? theoreticalReturn * costs.taxRate * 0.3 : 0;
-    const actualReturn = theoreticalReturn - roundTripCost - taxDrag;
-
+    // runBacktest()가 이미 모든 비용을 반영한 결과를 반환하므로 추가 차감 불필요
     return NextResponse.json({
       success: true,
-      result: {
-        ...result,
-        stats: {
-          ...result.stats,
-          actualReturn: (actualReturn * 100).toFixed(2),
-          roundTripCost: (roundTripCost * 100).toFixed(2),
-          taxDrag: (taxDrag * 100).toFixed(2),
-        },
-      },
+      result,
     });
   } catch (error) {
     console.error("Backtest error:", error);

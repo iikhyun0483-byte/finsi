@@ -295,47 +295,56 @@ export async function getAllMacroIndicators(): Promise<MacroIndicators> {
 export function calcMacroScore(indicators: MacroIndicators): number {
   let score = 0;
 
-  // 공포탐욕지수 (역방향: 공포일 때 매수 기회)
-  // 0~25: 극도의 공포 → 100점
-  // 25~45: 공포 → 75점
-  // 45~55: 중립 → 50점
-  // 55~75: 탐욕 → 25점
-  // 75~100: 극도의 탐욕 → 0점
-  if (indicators.fearGreed < 25) score += 30;
-  else if (indicators.fearGreed < 45) score += 22;
-  else if (indicators.fearGreed < 55) score += 15;
-  else if (indicators.fearGreed < 75) score += 7;
+  // 공포탐욕지수 (역방향: 공포일 때 매수 기회) - 가중치 25%
+  if (indicators.fearGreed < 25) score += 25;
+  else if (indicators.fearGreed < 45) score += 18;
+  else if (indicators.fearGreed < 55) score += 12;
+  else if (indicators.fearGreed < 75) score += 6;
   else score += 0;
 
-  // VIX (역방향: 낮을수록 안정적)
-  // <15: 안정 → 30점
-  // 15~20: 보통 → 20점
-  // 20~30: 높음 → 10점
-  // >30: 매우 높음 → 0점
-  if (indicators.vix < 15) score += 25;
-  else if (indicators.vix < 20) score += 17;
-  else if (indicators.vix < 30) score += 8;
+  // VIX (역방향: 낮을수록 안정적) - 가중치 20%
+  if (indicators.vix < 15) score += 20;
+  else if (indicators.vix < 20) score += 14;
+  else if (indicators.vix < 30) score += 7;
   else score += 0;
 
-  // 기준금리 (역방향: 낮을수록 유동성 풍부)
-  // <2%: 매우 낮음 → 25점
-  // 2~4%: 적정 → 18점
-  // 4~6%: 높음 → 10점
-  // >6%: 매우 높음 → 0점
-  if (indicators.fedRate < 2) score += 25;
-  else if (indicators.fedRate < 4) score += 18;
-  else if (indicators.fedRate < 6) score += 10;
+  // 기준금리 (역방향: 낮을수록 유동성 풍부) - 가중치 20%
+  if (indicators.fedRate < 2) score += 20;
+  else if (indicators.fedRate < 4) score += 15;
+  else if (indicators.fedRate < 6) score += 8;
   else score += 0;
 
-  // 버핏지수 (역방향: 낮을수록 저평가)
-  // <100: 매우 저평가 → 20점
-  // 100~120: 적정 → 15점
-  // 120~150: 고평가 → 8점
-  // >150: 매우 고평가 → 0점
-  if (indicators.buffett < 100) score += 20;
-  else if (indicators.buffett < 120) score += 15;
-  else if (indicators.buffett < 150) score += 8;
+  // 버핏지수 (역방향: 낮을수록 저평가) - 가중치 15%
+  if (indicators.buffett < 100) score += 15;
+  else if (indicators.buffett < 120) score += 12;
+  else if (indicators.buffett < 150) score += 6;
   else score += 0;
+
+  // CPI (인플레이션 역방향: 낮고 안정적일수록 좋음) - 가중치 10%
+  if (indicators.cpi != null) {
+    if (indicators.cpi < 2) score += 10;        // 2% 미만: 디플레이션 우려
+    else if (indicators.cpi < 2.5) score += 10; // 2-2.5%: 이상적
+    else if (indicators.cpi < 4) score += 6;    // 2.5-4%: 약간 높음
+    else if (indicators.cpi < 6) score += 2;    // 4-6%: 높음
+    else score += 0;                             // 6% 이상: 매우 높음
+  }
+
+  // 실업률 (역방향: 낮을수록 경기 좋음) - 가중치 5%
+  if (indicators.unemploymentRate != null) {
+    if (indicators.unemploymentRate < 3.5) score += 5;      // 완전고용
+    else if (indicators.unemploymentRate < 4.5) score += 4; // 건강한 수준
+    else if (indicators.unemploymentRate < 6) score += 2;   // 약간 높음
+    else score += 0;                                         // 6% 이상: 경기 둔화
+  }
+
+  // GDP 성장률 (정방향: 높을수록 좋음) - 가중치 5%
+  if (indicators.gdpGrowth != null) {
+    if (indicators.gdpGrowth > 3) score += 5;          // 3% 이상: 강력한 성장
+    else if (indicators.gdpGrowth > 2) score += 4;     // 2-3%: 건강한 성장
+    else if (indicators.gdpGrowth > 1) score += 2;     // 1-2%: 약한 성장
+    else if (indicators.gdpGrowth > 0) score += 1;     // 0-1%: 침체 우려
+    else score += 0;                                    // 마이너스: 경기 후퇴
+  }
 
   return Math.min(100, Math.max(0, score));
 }
