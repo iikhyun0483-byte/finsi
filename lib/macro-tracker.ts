@@ -188,21 +188,36 @@ export async function getMacroRiskScore(): Promise<{
   signals: MacroSignal[]
   regime:  'CRISIS' | 'BEAR' | 'NEUTRAL' | 'BULL'
 }> {
-  const { data } = await supabase
+  console.log('📊 getMacroRiskScore: Querying DB...')
+
+  const { data, error } = await supabase
     .from('macro_indicators')
     .select('*')
     .order('recorded_at', { ascending: false })
     .limit(20)
 
+  if (error) {
+    console.error('❌ getMacroRiskScore: DB query error:', error)
+    return { score: 50, signals: [], regime: 'NEUTRAL' }
+  }
+
+  console.log('📊 getMacroRiskScore: DB returned', data?.length ?? 0, 'records')
+
   if (!data || data.length === 0) {
+    console.warn('⚠️ getMacroRiskScore: No data found in DB')
     return { score: 50, signals: [], regime: 'NEUTRAL' }
   }
 
   // 최신 값만 추출
   const latest: Record<string, number> = {}
   for (const d of data) {
-    if (!latest[d.indicator_name]) latest[d.indicator_name] = d.value
+    if (!latest[d.indicator_name]) {
+      latest[d.indicator_name] = d.value
+      console.log(`📊 Latest ${d.indicator_name}: ${d.value} (recorded: ${d.recorded_at})`)
+    }
   }
+
+  console.log('📊 Latest indicators:', Object.keys(latest))
 
   let riskScore = 0
   const signals: MacroSignal[] = []
@@ -246,6 +261,8 @@ export async function getMacroRiskScore(): Promise<{
   const regime = riskScore >= 70 ? 'CRISIS' :
                  riskScore >= 45 ? 'BEAR'   :
                  riskScore >= 20 ? 'NEUTRAL' : 'BULL'
+
+  console.log(`📊 getMacroRiskScore: Returning ${signals.length} signals, score=${riskScore}, regime=${regime}`)
 
   return { score: Math.min(riskScore, 100), signals, regime }
 }
