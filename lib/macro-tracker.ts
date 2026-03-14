@@ -193,8 +193,6 @@ export async function getMacroRiskScore(): Promise<{
   const { data, error } = await supabase
     .from('macro_indicators')
     .select('*')
-    .order('recorded_at', { ascending: false })
-    .limit(20)
 
   if (error) {
     console.error('❌ getMacroRiskScore: DB query error:', error)
@@ -208,13 +206,11 @@ export async function getMacroRiskScore(): Promise<{
     return { score: 50, signals: [], regime: 'NEUTRAL' }
   }
 
-  // 최신 값만 추출
+  // upsert with onConflict로 각 indicator당 1개 행만 존재하므로 모든 행 사용
   const latest: Record<string, number> = {}
   for (const d of data) {
-    if (!latest[d.indicator_name]) {
-      latest[d.indicator_name] = d.value
-      console.log(`📊 Latest ${d.indicator_name}: ${d.value} (recorded: ${d.recorded_at})`)
-    }
+    latest[d.indicator_name] = d.value
+    console.log(`📊 Indicator ${d.indicator_name}: ${d.value}`)
   }
 
   console.log('📊 Latest indicators:', Object.keys(latest))
