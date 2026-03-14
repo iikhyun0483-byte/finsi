@@ -165,9 +165,9 @@ export async function syncMacroIndicators(): Promise<MacroSignal[]> {
     results.push(signal)
 
     const { error: upsertError } = await supabase.from('macro_indicators').upsert({
-      indicator_type: name,
-      가치: value,
-      메타데이터: {
+      'indicator_type': name,
+      '가치': value,
+      '메타데이터': {
         signal: signal.signal,
         source: name === 'VIX' || name === 'DXY' ? 'Yahoo Finance' : 'FRED',
         impact: signal.impact
@@ -212,8 +212,10 @@ export async function getMacroRiskScore(): Promise<{
   // upsert with onConflict로 각 indicator당 1개 행만 존재하므로 모든 행 사용
   const latest: Record<string, number> = {}
   for (const d of data) {
-    latest[d.indicator_type] = d.가치
-    console.log(`📊 Indicator ${d.indicator_type}: ${d.가치}`)
+    const indicatorType = d['indicator_type']
+    const value = d['가치']
+    latest[indicatorType] = value
+    console.log(`📊 Indicator ${indicatorType}: ${value}`)
   }
 
   console.log('📊 Latest indicators:', Object.keys(latest))
