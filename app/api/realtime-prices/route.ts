@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getRealtimePrices } from "@/lib/realtime-price";
+import { getYahooHistorical } from "@/lib/yahoo";
+import { getCryptoHistorical } from "@/lib/crypto";
 
 export const dynamic = "force-dynamic";
 
@@ -14,6 +16,7 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    // 현재가 조회
     const priceMap = await getRealtimePrices([symbol]);
     const price = priceMap.get(symbol);
 
@@ -24,13 +27,44 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    // 과거 데이터 조회 (factor 계산용 - 1년치)
+    let historicalPrices: Array<{close: number; volume?: number; date?: string}> = [];
+
+    try {
+      // 암호화폐 여부 확인
+      const isCrypto = symbol.includes('-USD') || ['BTC', 'ETH', 'SOL', 'XRP', 'ADA', 'DOGE'].includes(symbol.toUpperCase());
+
+      if (isCrypto) {
+        // 암호화폐: CoinGecko API 사용
+        const coinId = symbol.toLowerCase().replace('-usd', '');
+        const cryptoData = await getCryptoHistorical(coinId, 365);
+        historicalPrices = cryptoData.map(d => ({
+          close: d.price,
+          volume: 0,
+          date: d.date,
+        }));
+      } else {
+        // 주식/ETF: Yahoo Finance API 사용
+        const yahooData = await getYahooHistorical(symbol, '1y');
+        historicalPrices = yahooData.map(d => ({
+          close: d.close,
+          volume: d.volume,
+          date: d.date,
+        }));
+      }
+    } catch (err) {
+      console.warn(`Historical data fetch failed for ${symbol}, using current price only:`, err);
+      // 실패 시 현재가만 사용
+      historicalPrices = [{close: price.price}];
+    }
+
     return NextResponse.json({
       success: true,
       symbol,
       price,
-      prices: [price], // factors 페이지 호환성
-      history: [price], // 호환성
-      data: [price], // 호환성
+      prices: historicalPrices, // factors 페이지용 과거 데이터 배열
+      history: historicalPrices, // 호환성
+      data: historicalPrices, // 호환성
     });
   } catch (error) {
     console.error("Realtime price GET error:", error);
