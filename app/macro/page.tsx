@@ -60,10 +60,24 @@ export default function MacroPage() {
   const sync = async () => {
     setSyncing(true)
     try {
-      await fetch('/api/macro?action=sync')
+      console.log('🔄 Macro data sync started...')
+      const res = await fetch('/api/macro?action=sync')
+      const json = await res.json()
+
+      if (!res.ok) {
+        console.error('❌ Sync failed:', json)
+        alert(`데이터 수집 실패: ${json.error || '알 수 없는 오류'}`)
+        setSyncing(false)
+        return
+      }
+
+      console.log('✅ Sync completed:', json)
       setLastSync(new Date().toLocaleTimeString('ko-KR'))
       await load()
-    } catch {}
+    } catch (e) {
+      console.error('❌ Sync error:', e)
+      alert(`데이터 수집 오류: ${e instanceof Error ? e.message : '네트워크 오류'}`)
+    }
     setSyncing(false)
   }
 

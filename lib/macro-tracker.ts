@@ -18,13 +18,31 @@ interface MacroSignal {
 
 // FRED 데이터 조회
 async function fetchFRED(series: string): Promise<number | null> {
+  if (!FRED_API_KEY || FRED_API_KEY === 'your_api_key') {
+    console.warn(`⚠️ FRED_API_KEY not configured, skipping ${series}`)
+    return null
+  }
+
   try {
     const url = `https://api.stlouisfed.org/fred/series/observations?series_id=${series}&api_key=${FRED_API_KEY}&sort_order=desc&limit=1&file_type=json`
     const res  = await fetch(url, { next: { revalidate: 3600 } })
+
+    if (!res.ok) {
+      console.warn(`⚠️ FRED API error for ${series}: ${res.status}`)
+      return null
+    }
+
     const data = await res.json()
     const val  = data.observations?.[0]?.value
-    return val && val !== '.' ? Number(val) : null
-  } catch {
+    const result = val && val !== '.' ? Number(val) : null
+
+    if (result !== null) {
+      console.log(`✅ FRED ${series}: ${result}`)
+    }
+
+    return result
+  } catch (e) {
+    console.warn(`⚠️ Failed to fetch FRED ${series}:`, e)
     return null
   }
 }
@@ -33,9 +51,22 @@ async function fetchFRED(series: string): Promise<number | null> {
 async function fetchVIX(): Promise<number | null> {
   try {
     const res  = await fetch('https://query1.finance.yahoo.com/v8/finance/chart/%5EVIX?interval=1d&range=1d')
+
+    if (!res.ok) {
+      console.warn(`⚠️ Yahoo Finance VIX error: ${res.status}`)
+      return null
+    }
+
     const data = await res.json()
-    return data.chart?.result?.[0]?.meta?.regularMarketPrice ?? null
-  } catch {
+    const vix = data.chart?.result?.[0]?.meta?.regularMarketPrice ?? null
+
+    if (vix !== null) {
+      console.log(`✅ VIX: ${vix.toFixed(2)}`)
+    }
+
+    return vix
+  } catch (e) {
+    console.warn('⚠️ Failed to fetch VIX:', e)
     return null
   }
 }
@@ -44,9 +75,22 @@ async function fetchVIX(): Promise<number | null> {
 async function fetchDXY(): Promise<number | null> {
   try {
     const res  = await fetch('https://query1.finance.yahoo.com/v8/finance/chart/DX-Y.NYB?interval=1d&range=1d')
+
+    if (!res.ok) {
+      console.warn(`⚠️ Yahoo Finance DXY error: ${res.status}`)
+      return null
+    }
+
     const data = await res.json()
-    return data.chart?.result?.[0]?.meta?.regularMarketPrice ?? null
-  } catch {
+    const dxy = data.chart?.result?.[0]?.meta?.regularMarketPrice ?? null
+
+    if (dxy !== null) {
+      console.log(`✅ DXY: ${dxy.toFixed(2)}`)
+    }
+
+    return dxy
+  } catch (e) {
+    console.warn('⚠️ Failed to fetch DXY:', e)
     return null
   }
 }
@@ -97,6 +141,8 @@ function interpretMacro(indicator: string, value: number): MacroSignal {
 
 // 전체 매크로 수집 + DB 저장
 export async function syncMacroIndicators(): Promise<MacroSignal[]> {
+  console.log('📊 Starting macro indicators sync...')
+
   const fetches: Array<[string, Promise<number | null>]> = [
     ['VIX',       fetchVIX()],
     ['DXY',       fetchDXY()],
@@ -110,20 +156,29 @@ export async function syncMacroIndicators(): Promise<MacroSignal[]> {
 
   for (const [name, promise] of fetches) {
     const value = await promise
-    if (value === null) continue
+    if (value === null) {
+      console.warn(`⚠️ Skipping ${name} - no data`)
+      continue
+    }
 
     const signal = interpretMacro(name, value)
     results.push(signal)
 
-    await supabase.from('macro_indicators').upsert({
-      indicator_name: name,
-      value,
-      signal:         signal.signal,
-      source:         name === 'VIX' || name === 'DXY' ? 'Yahoo Finance' : 'FRED',
-      recorded_at:    new Date().toISOString(),
-    }, { onConflict: 'indicator_name' })
+    try {
+      await supabase.from('macro_indicators').upsert({
+        indicator_name: name,
+        value,
+        signal:         signal.signal,
+        source:         name === 'VIX' || name === 'DXY' ? 'Yahoo Finance' : 'FRED',
+        recorded_at:    new Date().toISOString(),
+      }, { onConflict: 'indicator_name' })
+      console.log(`✅ Saved ${name} to DB`)
+    } catch (e) {
+      console.error(`❌ Failed to save ${name} to DB:`, e)
+    }
   }
 
+  console.log(`✅ Macro sync completed: ${results.length} indicators`)
   return results
 }
 
