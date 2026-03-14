@@ -50,10 +50,25 @@ export default function MacroPage() {
 
   const load = useCallback(async () => {
     try {
+      console.log('📊 Loading macro score...')
       const res = await fetch('/api/macro?action=score')
       const json = await res.json()
-      if (json.score !== undefined) setData(json)
-    } catch {}
+      console.log('📊 Score response:', json)
+
+      if (!res.ok) {
+        console.error('❌ Failed to load score:', json)
+        return
+      }
+
+      if (json.score !== undefined) {
+        console.log('✅ Setting data:', json)
+        setData(json)
+      } else {
+        console.warn('⚠️ No score in response:', json)
+      }
+    } catch (e) {
+      console.error('❌ Load error:', e)
+    }
     setLoading(false)
   }, [])
 
@@ -73,6 +88,11 @@ export default function MacroPage() {
 
       console.log('✅ Sync completed:', json)
       setLastSync(new Date().toLocaleTimeString('ko-KR'))
+
+      // DB에 저장되는 시간을 고려하여 약간의 지연 후 재로드
+      console.log('⏳ Waiting 500ms for DB to update...')
+      await new Promise(resolve => setTimeout(resolve, 500))
+
       await load()
     } catch (e) {
       console.error('❌ Sync error:', e)

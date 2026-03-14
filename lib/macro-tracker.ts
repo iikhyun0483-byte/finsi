@@ -212,6 +212,11 @@ export async function getMacroRiskScore(): Promise<{
     signals.push(s)
     riskScore += s.signal === 'RISK_OFF' ? 30 : s.signal === 'RISK_ON' ? 0 : 15
   }
+  if (latest.DXY) {
+    const s = interpretMacro('DXY', latest.DXY)
+    signals.push(s)
+    riskScore += s.signal === 'RISK_OFF' ? 10 : 0
+  }
   if (latest.T10Y2Y !== undefined) {
     signals.push({
       indicator: 'T10Y2Y', value: latest.T10Y2Y,
@@ -231,6 +236,11 @@ export async function getMacroRiskScore(): Promise<{
     const s = interpretMacro('UNRATE', latest.UNRATE)
     signals.push(s)
     riskScore += s.signal === 'RISK_OFF' ? 15 : 0
+  }
+  if (latest.CPIAUCSL) {
+    const s = interpretMacro('CPIAUCSL', latest.CPIAUCSL)
+    signals.push(s)
+    riskScore += s.signal === 'RISK_OFF' ? 10 : 0
   }
 
   const regime = riskScore >= 70 ? 'CRISIS' :
