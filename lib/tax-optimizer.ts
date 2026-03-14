@@ -1,5 +1,6 @@
 // lib/tax-optimizer.ts
 // 세금 최적화 타이밍 계산
+import { TRADING_COSTS, type AssetType } from './trade-calculator'
 
 export interface TaxOptResult {
   currentTax:      number
@@ -10,11 +11,14 @@ export interface TaxOptResult {
   optimalSellDate: string | null
 }
 
+// 세금 공제 기준액 (2024년 기준)
+const TAX_THRESHOLD = 2_500_000  // 250만원
+
 export function calcTaxOptimization(input: {
   entryPrice:    number
   currentPrice:  number
   shares:        number
-  assetType:     'domesticStock' | 'usStock' | 'crypto'
+  assetType:     AssetType
   holdingDays:   number
   otherGains:    number    // 올해 다른 수익 (250만 초과 여부 계산)
   otherLosses:   number    // 올해 다른 손실
@@ -24,15 +28,8 @@ export function calcTaxOptimization(input: {
   const grossProfit = (currentPrice - entryPrice) * shares
   const netOtherGains = otherGains - otherLosses
 
-  // 세율
-  const TAX_THRESHOLD = 2_500_000  // 250만원
-  const TAX_RATE: Record<string, number> = {
-    domesticStock: 0,           // 국내 주식: 대주주 아니면 비과세
-    usStock:       0.22,
-    crypto:        0.20,
-  }
-
-  const taxRate = TAX_RATE[assetType] ?? 0
+  // 중앙화된 세율 사용
+  const taxRate = TRADING_COSTS[assetType].taxRate
 
   // 지금 팔 경우 세금
   const taxableNow = Math.max(0, grossProfit + netOtherGains - TAX_THRESHOLD)

@@ -7,6 +7,30 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
 
+// 최적화 임계값 상수
+const MIN_SIGNALS_FOR_OPTIMIZATION = 100
+const MIN_SIGNALS_FOR_ANALYSIS = 30
+const OPTIMIZATION_SAMPLE_SIZE = 200
+const RECENT_ACCURACY_WINDOW = 100
+const ACCURACY_THRESHOLD = 0.55
+const TOP_QUARTILE_RATIO = 0.25
+const BOTTOM_QUARTILE_RATIO = 0.75
+const QUALITY_BOOST_MULTIPLIER = 1.1
+const QUALITY_PENALTY_MULTIPLIER = 0.9
+
+// 기본 팩터 가중치
+const DEFAULT_FACTOR_WEIGHTS = {
+  momentum: 0.25,
+  value: 0.20,
+  quality: 0.25,
+  lowVol: 0.15,
+  volume: 0.15,
+}
+
+// 신호 점수 임계값
+const DEFAULT_MIN_SIGNAL_SCORE = 70
+const RAISED_MIN_SIGNAL_SCORE = 80
+
 export interface OptimizationResult {
   signalCount:     number
   accuracy7d:      number
@@ -24,30 +48,32 @@ async function calcFactorAccuracy(): Promise<Record<string, number>> {
     .select('signal_score, is_correct_7d, return_7d')
     .not('is_correct_7d', 'is', null)
     .order('created_at', { ascending: false })
-    .limit(200)
+    .limit(OPTIMIZATION_SAMPLE_SIZE)
 
-  if (!data || data.length < 30) {
-    return { momentum: 0.25, value: 0.20, quality: 0.25, lowVol: 0.15, volume: 0.15 }
+  if (!data || data.length < MIN_SIGNALS_FOR_ANALYSIS) {
+    return { ...DEFAULT_FACTOR_WEIGHTS }
   }
 
   // 점수 분위별 정확도 계산
   const sorted = [...data].sort((a, b) => b.signal_score - a.signal_score)
-  const topQuartile    = sorted.slice(0, Math.floor(sorted.length * 0.25))
-  const bottomQuartile = sorted.slice(Math.floor(sorted.length * 0.75))
+  const topQuartile    = sorted.slice(0, Math.floor(sorted.length * TOP_QUARTILE_RATIO))
+  const bottomQuartile = sorted.slice(Math.floor(sorted.length * BOTTOM_QUARTILE_RATIO))
 
   const topAccuracy    = topQuartile.filter(d => d.is_correct_7d).length / topQuartile.length
   const bottomAccuracy = bottomQuartile.filter(d => d.is_correct_7d).length / bottomQuartile.length
 
   // 상위 신호가 정확하면 현재 가중치 유지
   // 하위 신호가 오히려 정확하면 가중치 역전
-  const qualityMultiplier = topAccuracy > bottomAccuracy ? 1.1 : 0.9
+  const qualityMultiplier = topAccuracy > bottomAccuracy
+    ? QUALITY_BOOST_MULTIPLIER
+    : QUALITY_PENALTY_MULTIPLIER
 
   return {
-    momentum: 0.25 * qualityMultiplier,
-    value:    0.20,
-    quality:  0.25,
-    lowVol:   0.15,
-    volume:   0.15 * (1 / qualityMultiplier),
+    momentum: DEFAULT_FACTOR_WEIGHTS.momentum * qualityMultiplier,
+    value:    DEFAULT_FACTOR_WEIGHTS.value,
+    quality:  DEFAULT_FACTOR_WEIGHTS.quality,
+    lowVol:   DEFAULT_FACTOR_WEIGHTS.lowVol,
+    volume:   DEFAULT_FACTOR_WEIGHTS.volume * (1 / qualityMultiplier),
   }
 }
 
@@ -58,14 +84,14 @@ export async function runOptimization(): Promise<OptimizationResult> {
     .not('is_correct_7d', 'is', null)
 
   const signalCount   = count ?? 0
-  const isSignificant = signalCount >= 100
+  const isSignificant = signalCount >= MIN_SIGNALS_FOR_OPTIMIZATION
 
   const { data: recent } = await supabase
     .from('signal_tracking')
     .select('is_correct_7d')
     .not('is_correct_7d', 'is', null)
     .order('created_at', { ascending: false })
-    .limit(100)
+    .limit(RECENT_ACCURACY_WINDOW)
 
   const accuracy7d = recent && recent.length > 0
     ? recent.filter(d => d.is_correct_7d).length / recent.length
@@ -81,11 +107,12 @@ export async function runOptimization(): Promise<OptimizationResult> {
   const changes: OptimizationResult['changes'] = []
 
   if (isSignificant) {
-    // 정확도 55% 이하면 진입 임계값 높이기 권장
-    if (accuracy7d < 0.55) {
+    // 정확도 임계값 이하면 진입 임계값 높이기 권장
+    if (accuracy7d < ACCURACY_THRESHOLD) {
       changes.push({
         param: 'min_signal_score',
-        old: 70, new: 80,
+        old: DEFAULT_MIN_SIGNAL_SCORE,
+        new: RAISED_MIN_SIGNAL_SCORE,
         reason: `정확도 ${(accuracy7d*100).toFixed(1)}% — 임계값 상향으로 품질 개선`
       })
     }

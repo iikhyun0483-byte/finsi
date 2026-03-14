@@ -33,7 +33,9 @@ export function scoreBusiness(input: BusinessInput): BusinessResult {
   const monthlyProfit = monthlyRevenue - totalCost
   const currentMargin = monthlyRevenue > 0 ? monthlyProfit / monthlyRevenue : -1
 
-  const breakEvenRevenue = monthlyFixedCost / (1 - monthlyVariableCostRate)
+  const breakEvenRevenue = monthlyVariableCostRate < 1
+    ? monthlyFixedCost / (1 - monthlyVariableCostRate)
+    : Infinity
 
   // 런웨이 계산
   let runway: number

@@ -19,17 +19,17 @@ export async function GET() {
 
 export async function POST(req: NextRequest) {
   try {
-    const { action, weights, totalValue } = await req.json()
+    const body = await req.json()
+    const { action, weights, totalValue, before, after, trades, driftScore } = body
 
     if (action === 'calc') {
       const tv = totalValue ?? 10_000_000
       const { drift, maxDrift, needsRebalance } = await calcDrift(weights)
-      const trades = await calcRebalanceTrades(weights, tv)
-      return NextResponse.json({ drift, maxDrift, needsRebalance, trades })
+      const tradesResult = await calcRebalanceTrades(weights, tv)
+      return NextResponse.json({ drift, maxDrift, needsRebalance, trades: tradesResult })
     }
 
     if (action === 'log') {
-      const { before, after, trades, driftScore } = await req.json()
       await logRebalance(before, after, trades, driftScore)
       return NextResponse.json({ ok: true })
     }

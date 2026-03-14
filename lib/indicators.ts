@@ -78,8 +78,26 @@ export function calcMACD(data: number[]): MACDResult {
     ema12[i] !== null && ema26[i] !== null ? ema12[i]! - ema26[i]! : null
   );
 
-  const validMacd = macdLine.map((v) => v ?? 0);
-  const signalLine = calcEMA(validMacd, 9);
+  // Signal line은 MACD 값이 실제로 존재하는 위치부터만 계산
+  const signalLine: (number | null)[] = Array(macdLine.length).fill(null);
+  const validMacdIndices: number[] = [];
+  const validMacdValues: number[] = [];
+
+  macdLine.forEach((v, i) => {
+    if (v !== null) {
+      validMacdIndices.push(i);
+      validMacdValues.push(v);
+    }
+  });
+
+  if (validMacdValues.length >= 9) {
+    const signalEma = calcEMA(validMacdValues, 9);
+    signalEma.forEach((val, i) => {
+      if (val !== null && validMacdIndices[i] !== undefined) {
+        signalLine[validMacdIndices[i]] = val;
+      }
+    });
+  }
 
   const histogram = macdLine.map((v, i) =>
     v !== null && signalLine[i] !== null ? v - signalLine[i]! : null

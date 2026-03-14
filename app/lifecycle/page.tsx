@@ -449,8 +449,9 @@ export default function LifecyclePage() {
                 resultData={result}
                 defaultLabel={`인생설계_${form.currentAge}세_${form.retirementAge}세은퇴`}
                 onLoad={(input, res) => {
-                  setForm(prev => ({ ...prev, ...Object.fromEntries(Object.entries(input).map(([k,v])=>[k,String(v)])) }))
-                  setResult(res)
+                  const inputData = input as Record<string, unknown>
+                  setForm(prev => ({ ...prev, ...Object.fromEntries(Object.entries(inputData).map(([k,v])=>[k,String(v)])) }))
+                  setResult(res as LifecycleResult)
                 }}
               />
             </div>

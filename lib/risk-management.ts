@@ -1,6 +1,7 @@
 /**
  * 리스크 관리 (켈리 공식, ATR 손절)
  */
+import { calcKellyPosition, type KellyInput, type KellyOutput } from './kelly'
 
 export interface RiskProfile {
   signal: number;              // 신호 점수 (0-100)
@@ -12,21 +13,6 @@ export interface RiskProfile {
   stopLoss: number;            // 손절 가격 (%)
   takeProfit: number;          // 익절 가격 (%)
   atr: number | null;          // ATR (Average True Range)
-}
-
-/**
- * 켈리 공식 계산
- * Kelly% = W - [(1-W) / R]
- * W = 승률, R = 평균승/평균패
- */
-function calculateKelly(winRate: number, avgWin: number, avgLoss: number): number {
-  if (avgLoss === 0) return 0;
-  
-  const R = Math.abs(avgWin / avgLoss); // 승패 비율
-  const kelly = winRate - ((1 - winRate) / R);
-  
-  // 켈리의 절반만 사용 (보수적)
-  return Math.max(0, Math.min(0.25, kelly * 0.5));
 }
 
 /**
@@ -60,27 +46,35 @@ export function createRiskProfile(
   atr?: number | null
 ): RiskProfile {
   // 백테스트 데이터가 없으면 신호 점수 기반 추정
-  let winRate = winRateData?.winRate ?? estimateWinRate(signalScore);
-  let avgWin = winRateData?.avgWin ?? 5; // 기본 5%
-  let avgLoss = winRateData?.avgLoss ?? -3; // 기본 -3%
+  const winRate = winRateData?.winRate ?? estimateWinRate(signalScore);
+  const avgWin = winRateData?.avgWin ?? 0.05; // 기본 5%
+  const avgLoss = winRateData?.avgLoss ?? 0.03; // 기본 3%
 
-  // 켈리 공식
-  const kellyPercentage = calculateKelly(winRate, avgWin, Math.abs(avgLoss));
+  // 중앙화된 켈리 계산 사용
+  const kellyResult = calcKellyPosition({
+    signalScore,
+    winRate,
+    avgWin,
+    avgLoss,
+    currentPrice: 100, // 비율 계산이므로 기준가 100 사용
+    maxAllocation: 0.25,
+  });
 
-  // 신호 점수에 따른 권장 포지션
-  let recommendedPosition = 0;
-
+  // 신호 점수에 따른 권장 포지션 (켈리 결과를 상한으로 사용)
+  let maxPosition = 0;
   if (signalScore >= 85) {
-    recommendedPosition = Math.min(15, kellyPercentage * 100); // 최대 15%
+    maxPosition = 15;
   } else if (signalScore >= 75) {
-    recommendedPosition = Math.min(10, kellyPercentage * 100); // 최대 10%
+    maxPosition = 10;
   } else if (signalScore >= 65) {
-    recommendedPosition = Math.min(7, kellyPercentage * 100);  // 최대 7%
+    maxPosition = 7;
   } else if (signalScore >= 55) {
-    recommendedPosition = Math.min(5, kellyPercentage * 100);  // 최대 5%
+    maxPosition = 5;
   } else {
-    recommendedPosition = Math.min(3, kellyPercentage * 100);  // 최대 3%
+    maxPosition = 3;
   }
+
+  const recommendedPosition = Math.min(maxPosition, kellyResult.safeAllocation * 100);
 
   // ATR 기반 손절/익절
   const { stopLoss, takeProfit } = calculateStopLossTakeProfit(signalScore, atr ?? null);
@@ -90,7 +84,7 @@ export function createRiskProfile(
     winRate,
     avgWin,
     avgLoss,
-    kellyPercentage: kellyPercentage * 100,
+    kellyPercentage: kellyResult.safeAllocation * 100,
     recommendedPosition: Math.round(recommendedPosition * 10) / 10,
     stopLoss: Math.round(stopLoss * 10) / 10,
     takeProfit: Math.round(takeProfit * 10) / 10,

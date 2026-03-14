@@ -6,18 +6,18 @@ export interface SavedScenario {
   id: string
   type: string
   label: string
-  input_data: any
-  result_data: any
+  input_data: unknown
+  result_data: unknown
   created_at: string
 }
 
 interface ScenarioSaveProps {
   type: 'montecarlo' | 'lifecycle' | 'loan' | 'buyvsrent' | 'business' | 'compare'
-  inputData: any
-  resultData: any
+  inputData: unknown
+  resultData: unknown
   defaultLabel?: string
   // 불러오기 시 호출 — 입력값 복원 후 자동 재계산 트리거
-  onLoad?: (input: any, result: any) => void
+  onLoad?: (input: unknown, result: unknown) => void
 }
 
 const SESSION_KEY = (type: string) => `finsi_scenarios_${type}`

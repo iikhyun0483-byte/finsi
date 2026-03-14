@@ -23,8 +23,8 @@ export function calcOptimalReinvestment(input: {
     signalAccuracy, marketRegime, avgAnnualReturn
   } = input
 
-  const currentCashPct = currentCash / totalPortfolio * 100
-  const excessCash     = Math.max(0, currentCash - totalPortfolio * targetCashPct / 100)
+  const currentCashPct = totalPortfolio > 0 ? (currentCash / totalPortfolio * 100) : 0
+  const excessCash     = totalPortfolio > 0 ? Math.max(0, currentCash - totalPortfolio * targetCashPct / 100) : 0
 
   // 국면별 재투자 비율
   const reinvestRatio: Record<string, number> = {

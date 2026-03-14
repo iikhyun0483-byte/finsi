@@ -445,10 +445,11 @@ export default function FinancePage() {
                   resultData={result}
                   defaultLabel={`${MODES.find(m => m.key === mode)?.label}_${new Date().toLocaleDateString('ko-KR')}`}
                   onLoad={(input, res) => {
-                    if (mode === 'loan') setLoan(prev => ({ ...prev, ...input }))
-                    else if (mode === 'affordability') setAfford(prev => ({ ...prev, ...input }))
-                    else if (mode === 'buyvsrent') setBvr(prev => ({ ...prev, ...input }))
-                    else if (mode === 'business') setBiz(prev => ({ ...prev, ...input }))
+                    const inputData = input as Record<string, unknown>
+                    if (mode === 'loan') setLoan(prev => ({ ...prev, ...inputData }))
+                    else if (mode === 'affordability') setAfford(prev => ({ ...prev, ...inputData }))
+                    else if (mode === 'buyvsrent') setBvr(prev => ({ ...prev, ...inputData }))
+                    else if (mode === 'business') setBiz(prev => ({ ...prev, ...inputData }))
                     setResult(res)
                   }}
                 />
