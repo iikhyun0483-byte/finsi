@@ -3,14 +3,16 @@
 export interface ApprovalRequest {
   id?: string
   symbol: string
-  action: 'BUY'|'SELL'
+  order_type: 'BUY'|'SELL'
   quantity: number
-  price: number
-  reason: string
+  amount: number
+  signal_score?: number
+  signal_reason: string
   status: 'PENDING'|'APPROVED'|'REJECTED'|'EXPIRED'
-  requested_at: string
+  created_at: string
   expires_at: string
-  reviewed_at?: string
+  approved_at?: string
+  rejected_at?: string
 }
 
 const EXPIRY_MINUTES = 30
@@ -18,22 +20,24 @@ const EXPIRY_MINUTES = 30
 // 승인 요청 생성 (만료 시간 자동 설정)
 export function createApprovalRequest(
   symbol: string,
-  action: 'BUY'|'SELL',
+  orderType: 'BUY'|'SELL',
   quantity: number,
-  price: number,
-  reason: string
+  amount: number,
+  signalReason: string,
+  signalScore?: number
 ): Omit<ApprovalRequest, 'id'> {
   const now = new Date()
   const expiresAt = new Date(now.getTime() + EXPIRY_MINUTES * 60 * 1000)
 
   return {
     symbol,
-    action,
+    order_type: orderType,
     quantity,
-    price,
-    reason,
+    amount,
+    signal_score: signalScore,
+    signal_reason: signalReason,
     status: 'PENDING',
-    requested_at: now.toISOString(),
+    created_at: now.toISOString(),
     expires_at: expiresAt.toISOString(),
   }
 }

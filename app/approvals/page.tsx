@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { CheckCircle, XCircle, Clock, AlertTriangle } from 'lucide-react'
 import { ApprovalRequest, getRemainingSeconds, formatKST } from '@/lib/approval-engine'
 
@@ -28,18 +28,24 @@ function CountdownTimer({ expiresAt }: { expiresAt: string }) {
 export default function ApprovalsPage() {
   const [requests, setRequests] = useState<ApprovalRequest[]>([])
   const [loading, setLoading] = useState(false)
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null)
 
-  const loadRequests = async () => {
+  const showToast = (message: string, type: 'success' | 'error' | 'info' = 'info') => {
+    setToast({ message, type })
+    setTimeout(() => setToast(null), 5000)
+  }
+
+  const loadRequests = useCallback(async () => {
     const res = await fetch('/api/approvals?action=list')
     const data = await res.json()
     if (data.success) setRequests(data.requests)
-  }
+  }, [])
 
   useEffect(() => {
     loadRequests()
     const interval = setInterval(loadRequests, 5000) // 5초마다 새로고침
     return () => clearInterval(interval)
-  }, [])
+  }, [loadRequests])
 
   const handleApprove = async (id: string) => {
     setLoading(true)
@@ -51,15 +57,22 @@ export default function ApprovalsPage() {
       })
       const data = await res.json()
 
-      if (data.success) {
-        alert(`✅ 승인 완료: 주문번호 ${data.orderNo}`)
+      if (data.success && data.approved) {
+        if (data.orderExecuted) {
+          showToast(`승인 완료! 주문번호: ${data.orderNo}`, 'success')
+        } else {
+          // KIS 미연동 시
+          showToast('승인 완료! KIS 연동 후 실제 주문이 실행됩니다', 'info')
+        }
       } else if (data.expired) {
-        alert('⏰ 요청이 만료되었습니다')
+        showToast('요청이 만료되었습니다', 'error')
       } else {
-        alert(`❌ 실행 실패: ${data.message}`)
+        showToast(data.message || '실행 실패', 'error')
       }
 
       loadRequests()
+    } catch (error) {
+      showToast(`오류: ${(error as Error).message}`, 'error')
     } finally {
       setLoading(false)
     }
@@ -73,8 +86,10 @@ export default function ApprovalsPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'reject', id })
       })
-      alert('🚫 거부 완료')
+      showToast('거부 완료', 'success')
       loadRequests()
+    } catch (error) {
+      showToast(`오류: ${(error as Error).message}`, 'error')
     } finally {
       setLoading(false)
     }
@@ -83,6 +98,17 @@ export default function ApprovalsPage() {
   return (
     <div className="min-h-screen bg-[#0a0e1a] text-white p-4 md:p-6">
       <div className="max-w-5xl mx-auto">
+        {/* 토스트 알림 */}
+        {toast && (
+          <div className={`fixed top-4 right-4 z-50 px-4 py-3 rounded-lg shadow-lg transition-opacity ${
+            toast.type === 'success' ? 'bg-green-600' :
+            toast.type === 'error' ? 'bg-red-600' :
+            'bg-blue-600'
+          }`}>
+            <p className="text-sm font-medium text-white">{toast.message}</p>
+          </div>
+        )}
+
         <div className="mb-6">
           <div className="flex items-center gap-2 mb-1">
             <h1 className="text-2xl font-bold text-cyan-400 flex items-center gap-2">
@@ -114,13 +140,18 @@ export default function ApprovalsPage() {
                   <div>
                     <div className="flex items-center gap-2 mb-2">
                       <span className={`px-3 py-1 rounded-lg text-sm font-bold ${
-                        req.action === 'BUY' ? 'bg-green-600' : 'bg-red-600'
+                        req.order_type === 'BUY' ? 'bg-green-600' : 'bg-red-600'
                       }`}>
-                        {req.action}
+                        {req.order_type}
                       </span>
                       <span className="text-xl font-bold text-white">{req.symbol}</span>
+                      {req.signal_score && (
+                        <span className="px-2 py-0.5 bg-cyan-600/20 border border-cyan-600/40 rounded text-xs text-cyan-400">
+                          신호 점수: {req.signal_score}
+                        </span>
+                      )}
                     </div>
-                    <p className="text-gray-400 text-sm">{req.reason}</p>
+                    <p className="text-gray-400 text-sm">{req.signal_reason}</p>
                   </div>
                   <div className="text-right">
                     <p className="text-sm text-gray-500 mb-1">남은 시간</p>
@@ -138,12 +169,12 @@ export default function ApprovalsPage() {
                   <div>
                     <p className="text-gray-500">가격</p>
                     <p className="text-white font-semibold">
-                      {req.price === 0 ? '시장가' : `${req.price.toLocaleString()}원`}
+                      {req.amount === 0 ? '시장가' : `${req.amount.toLocaleString()}원`}
                     </p>
                   </div>
                   <div>
                     <p className="text-gray-500">요청 시각</p>
-                    <p className="text-white font-semibold">{formatKST(req.requested_at).slice(11,19)}</p>
+                    <p className="text-white font-semibold">{formatKST(req.created_at).slice(11,19)}</p>
                   </div>
                 </div>
 
