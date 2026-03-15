@@ -81,7 +81,7 @@ export async function getYahooHistorical(
       volume: quotes.volume[i] || 0,
     }));
 
-    return historical.filter((h) => h.close > 0); // 유효한 데이터만 반환
+    return historical.filter((h) => h.close > 0 && !isNaN(h.close) && h.close != null); // 유효한 데이터만 반환
   } catch (error) {
     console.error(`Yahoo 과거 데이터 조회 실패 (${symbol}):`, error);
     return [];
@@ -103,36 +103,5 @@ export async function getYahooQuotes(symbols: string[]): Promise<Map<string, Yah
   return quotes;
 }
 
-// 주요 ETF 목록
-export const MAJOR_ETFS = {
-  // 미국 주식
-  SPY: { name: "S&P 500", category: "stock" },
-  QQQ: { name: "NASDAQ 100", category: "stock" },
-  DIA: { name: "다우존스", category: "stock" },
-  IWM: { name: "러셀 2000", category: "stock" },
-
-  // 금/은
-  GLD: { name: "금 ETF", category: "commodity" },
-  SLV: { name: "은 ETF", category: "commodity" },
-
-  // 원유
-  USO: { name: "원유 ETF", category: "commodity" },
-  XLE: { name: "에너지 섹터 ETF", category: "commodity" },
-
-  // 채권
-  TLT: { name: "장기 국채 ETF", category: "bond" },
-  IEF: { name: "중기 국채 ETF", category: "bond" },
-  SHY: { name: "단기 국채 ETF", category: "bond" },
-  AGG: { name: "종합 채권 ETF", category: "bond" },
-
-  // 리츠
-  VNQ: { name: "부동산 리츠 ETF", category: "reit" },
-  IYR: { name: "미국 부동산 ETF", category: "reit" },
-};
-
-// 한국 주식 (ETF)
-export const KOREA_ETFS = {
-  "069500.KS": { name: "KODEX 200", category: "stock" },
-  "122630.KS": { name: "KODEX 레버리지", category: "stock" },
-  "229200.KS": { name: "KODEX 코스닥 150", category: "stock" },
-};
+// 주요 ETF 목록 (symbols.ts에서 import)
+export { MAJOR_ETFS, KOREA_ETFS } from "./symbols";

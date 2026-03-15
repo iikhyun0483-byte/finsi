@@ -81,18 +81,7 @@ export interface SectorFlow {
   signal: "강력 매수" | "매수" | "중립" | "매도";
 }
 
-const SECTOR_ETFS = {
-  XLK: "Technology",
-  XLF: "Financials",
-  XLE: "Energy",
-  XLV: "Healthcare",
-  XLI: "Industrials",
-  XLY: "Consumer Discretionary",
-  XLP: "Consumer Staples",
-  XLB: "Materials",
-  XLU: "Utilities",
-  XLRE: "Real Estate",
-};
+import { SECTOR_ETFS } from "./symbols";
 
 export async function getSectorFlows(): Promise<SectorFlow[]> {
   const cacheKey = "sector_flows";
@@ -106,7 +95,7 @@ export async function getSectorFlows(): Promise<SectorFlow[]> {
       // 6개월 데이터 조회
       const historical = await getYahooHistorical(symbol, "6mo");
 
-      if (historical.length < 30) continue;
+      if (historical.length < 60) continue;
 
       const currentPrice = historical[historical.length - 1].close;
       const price1w = historical[Math.max(0, historical.length - 5)].close;
@@ -156,15 +145,15 @@ export async function getSectorFlows(): Promise<SectorFlow[]> {
   }
 }
 
-// Put/Call Ratio (CBOE)
-// 실제 CBOE API는 유료이므로, 대신 VIX와 VXX를 사용한 간접 계산
+// Put/Call Ratio 추정 (CBOE)
+// 실제 CBOE API는 유료이므로, 대신 VIX를 사용한 간접 추정
 export interface PutCallRatio {
   ratio: number; // 1.0 기준 (높을수록 bearish)
   interpretation: "extreme_fear" | "fear" | "neutral" | "greed" | "extreme_greed";
   vix: number;
 }
 
-export async function getPutCallRatio(): Promise<PutCallRatio> {
+export async function estimatePutCallRatio(): Promise<PutCallRatio> {
   const cacheKey = "put_call_ratio";
   const cached = getCached<PutCallRatio>(cacheKey);
   if (cached) return cached;
@@ -233,8 +222,8 @@ export async function getLeadingIndicatorScore(
   // 2. Sector Flows
   const sectorFlows = await getSectorFlows();
 
-  // 3. Put/Call Ratio
-  const putCallRatio = await getPutCallRatio();
+  // 3. Put/Call Ratio (추정)
+  const putCallRatio = await estimatePutCallRatio();
   if (putCallRatio.interpretation === "extreme_greed") totalScore += 10;
   else if (putCallRatio.interpretation === "greed") totalScore += 5;
   else if (putCallRatio.interpretation === "fear") totalScore -= 5;

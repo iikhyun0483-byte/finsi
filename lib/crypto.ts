@@ -1,6 +1,8 @@
 // Binance Public API (무료, API 키 불필요, Rate limit 관대)
 // https://binance-docs.github.io/apidocs/spot/en/
 
+import { BINANCE_SYMBOL_MAP, REVERSE_SYMBOL_MAP } from "./symbols";
+
 export interface CryptoQuote {
   symbol: string;
   current_price: number;
@@ -20,23 +22,6 @@ export interface CryptoHistoricalData {
   price: number; // alias for close (backward compatibility)
   volume: number;
 }
-
-// 심볼 매핑 (표준 심볼 → Binance 심볼)
-export const BINANCE_SYMBOL_MAP: Record<string, string> = {
-  BTC: "BTCUSDT",
-  ETH: "ETHUSDT",
-  SOL: "SOLUSDT",
-  XRP: "XRPUSDT",
-  ADA: "ADAUSDT",
-  DOGE: "DOGEUSDT",
-  DOT: "DOTUSDT",
-  AVAX: "AVAXUSDT",
-};
-
-// 역방향 매핑 (Binance 심볼 → 표준 심볼)
-export const REVERSE_SYMBOL_MAP: Record<string, string> = Object.fromEntries(
-  Object.entries(BINANCE_SYMBOL_MAP).map(([k, v]) => [v, k])
-);
 
 // 실시간 암호화폐 시세 조회 (Binance)
 export async function getCryptoQuote(symbol: string): Promise<CryptoQuote | null> {
@@ -174,17 +159,8 @@ export async function getCryptoHistorical(
   }
 }
 
-// 주요 암호화폐 목록 (복원 완료)
-export const MAJOR_CRYPTOS = {
-  BTC: { symbol: "BTC", name: "비트코인", binance: "BTCUSDT" },
-  ETH: { symbol: "ETH", name: "이더리움", binance: "ETHUSDT" },
-  SOL: { symbol: "SOL", name: "솔라나", binance: "SOLUSDT" },
-  XRP: { symbol: "XRP", name: "리플", binance: "XRPUSDT" },
-  ADA: { symbol: "ADA", name: "카르다노", binance: "ADAUSDT" },
-  DOGE: { symbol: "DOGE", name: "도지코인", binance: "DOGEUSDT" },
-  DOT: { symbol: "DOT", name: "폴카닷", binance: "DOTUSDT" },
-  AVAX: { symbol: "AVAX", name: "아발란체", binance: "AVAXUSDT" },
-};
+// 주요 암호화폐 목록 (symbols.ts에서 import)
+export { MAJOR_CRYPTOS } from "./symbols";
 
 // 암호화폐 공포탐욕지수 (Alternative.me - 유지)
 export async function getCryptoFearGreedIndex(): Promise<{

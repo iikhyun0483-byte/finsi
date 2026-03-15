@@ -15,6 +15,18 @@ export interface MacroIndicators {
   gdpGrowth?: number; // GDP 성장률 (전년 대비 %)
 }
 
+// Fallback 기본값 중앙화 (2026년 Q1 예상치)
+export const MACRO_DEFAULTS = {
+  cpi: 2.5,              // CPI 전년 대비 %
+  unemploymentRate: 3.8, // 실업률 %
+  gdpGrowth: 2.2,        // GDP 성장률 %
+  vix: 15,               // VIX 지수
+  fedRate: 3.5,          // 기준금리 %
+  buffett: 100,          // 버핏지수
+  gdpBillion: 28500,     // GDP (십억 달러)
+  fearGreed: 50,         // 공포탐욕지수
+};
+
 // 재시도 함수
 async function retryAsync<T>(
   fn: () => Promise<T>,
@@ -129,9 +141,8 @@ async function getRealTimeGDP(): Promise<number> {
   }
 
   // 폴백: 최신 추정치
-  const fallbackGDP = 28500; // 2025년 Q1 예상 GDP (십억 달러)
-  console.warn(`⚠️ GDP 기본값 사용: $${fallbackGDP}B (FRED_API_KEY 설정 권장)`);
-  return fallbackGDP;
+  console.warn(`⚠️ GDP 기본값 사용: $${MACRO_DEFAULTS.gdpBillion}B (FRED_API_KEY 설정 권장)`);
+  return MACRO_DEFAULTS.gdpBillion;
 }
 
 // 버핏지수 (시가총액 / GDP 비율)
@@ -199,9 +210,8 @@ export async function getCPI(): Promise<number> {
   }
 
   // 폴백: 2026년 예상치
-  const fallbackCPI = 2.5;
-  console.warn(`⚠️ CPI 기본값 사용: ${fallbackCPI}%`);
-  return fallbackCPI;
+  console.warn(`⚠️ CPI 기본값 사용: ${MACRO_DEFAULTS.cpi}%`);
+  return MACRO_DEFAULTS.cpi;
 }
 
 // 실업률 조회
@@ -231,9 +241,8 @@ export async function getUnemploymentRate(): Promise<number> {
   }
 
   // 폴백: 2026년 예상치
-  const fallbackRate = 3.8;
-  console.warn(`⚠️ 실업률 기본값 사용: ${fallbackRate}%`);
-  return fallbackRate;
+  console.warn(`⚠️ 실업률 기본값 사용: ${MACRO_DEFAULTS.unemploymentRate}%`);
+  return MACRO_DEFAULTS.unemploymentRate;
 }
 
 // GDP 성장률 조회 (전년 대비 %)
@@ -263,21 +272,20 @@ export async function getGDPGrowth(): Promise<number> {
   }
 
   // 폴백: 2026년 예상치
-  const fallbackGrowth = 2.2;
-  console.warn(`⚠️ GDP 성장률 기본값 사용: ${fallbackGrowth}%`);
-  return fallbackGrowth;
+  console.warn(`⚠️ GDP 성장률 기본값 사용: ${MACRO_DEFAULTS.gdpGrowth}%`);
+  return MACRO_DEFAULTS.gdpGrowth;
 }
 
 // 모든 매크로 지표 일괄 조회
 export async function getAllMacroIndicators(): Promise<MacroIndicators> {
   const [fearGreed, vix, fedRate, buffett, cpi, unemploymentRate, gdpGrowth] = await Promise.all([
-    getFearGreedIndex(),
-    getVIX(),
-    getFedRate(),
-    getBuffettIndicator(),
-    getCPI().catch(() => 2.5),
-    getUnemploymentRate().catch(() => 3.8),
-    getGDPGrowth().catch(() => 2.2),
+    getFearGreedIndex().catch(() => MACRO_DEFAULTS.fearGreed),
+    getVIX().catch(() => MACRO_DEFAULTS.vix),
+    getFedRate().catch(() => MACRO_DEFAULTS.fedRate),
+    getBuffettIndicator().catch(() => MACRO_DEFAULTS.buffett),
+    getCPI().catch(() => MACRO_DEFAULTS.cpi),
+    getUnemploymentRate().catch(() => MACRO_DEFAULTS.unemploymentRate),
+    getGDPGrowth().catch(() => MACRO_DEFAULTS.gdpGrowth),
   ]);
 
   return {

@@ -4,18 +4,21 @@ import { useEffect, useState } from "react";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/common/Card";
 import { Badge } from "@/components/common/Badge";
 import { formatUSD, formatKRW, formatPercent } from "@/lib/utils";
-import { Globe, Activity, TrendingUp, BarChart3 } from "lucide-react";
+import { Globe, Activity, TrendingUp, BarChart3, Clock } from "lucide-react";
 import { getIndicatorLabel } from "@/lib/design-system";
 import { ParticleBackground } from "@/components/effects/ParticleBackground";
 import { CountUp } from "@/components/effects/CountUp";
 import { applyVixFilter } from "@/lib/vix-filter";
 import { safeNum } from "@/lib/score-helpers";
+import { MACRO_DEFAULTS } from "@/lib/macro";
 
 export default function MarketPage() {
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [sectorFlows, setSectorFlows] = useState<any>(null);
   const [selectedSector, setSelectedSector] = useState<number | null>(null);
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const [leadingScore, setLeadingScore] = useState<any>(null);
 
   const handleSectorClick = (index: number, e: React.MouseEvent<HTMLDivElement>) => {
     setSelectedSector(index);
@@ -35,6 +38,7 @@ export default function MarketPage() {
   useEffect(() => {
     fetchMarketData();
     fetchSectorFlows();
+    fetchLeadingIndicators();
   }, []);
 
   const fetchMarketData = async () => {
@@ -44,6 +48,7 @@ export default function MarketPage() {
       const result = await response.json();
       if (result.success) {
         setData(result);
+        setLastUpdated(new Date());
       }
     } catch (error) {
       console.error("Failed to fetch market data:", error);
@@ -62,6 +67,26 @@ export default function MarketPage() {
     } catch (error) {
       console.error("Failed to fetch sector flows:", error);
     }
+  };
+
+  const fetchLeadingIndicators = async () => {
+    try {
+      const { getLeadingIndicatorScore } = await import("@/lib/leading-indicators");
+      const score = await getLeadingIndicatorScore("SPY");
+      setLeadingScore(score);
+    } catch (error) {
+      console.error("Failed to fetch leading indicators:", error);
+    }
+  };
+
+  const getTimeSinceUpdate = () => {
+    if (!lastUpdated) return "";
+    const now = new Date();
+    const diff = Math.floor((now.getTime() - lastUpdated.getTime()) / 1000 / 60);
+    if (diff < 1) return "방금 전";
+    if (diff < 60) return `${diff}분 전`;
+    const hours = Math.floor(diff / 60);
+    return `${hours}시간 전`;
   };
 
   if (loading) {
@@ -111,6 +136,12 @@ export default function MarketPage() {
               <h2 className="font-orbitron text-xl font-bold text-[#00d4ff]">
                 MACRO INDICATORS (매크로 경제 지표)
               </h2>
+              {lastUpdated && (
+                <div className="ml-auto flex items-center gap-2 text-xs text-gray-400">
+                  <Clock className="w-4 h-4" />
+                  마지막 업데이트: {getTimeSinceUpdate()}
+                </div>
+              )}
             </div>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
               {[
@@ -208,25 +239,33 @@ export default function MarketPage() {
                 {
                   label: "소비자물가지수 (CPI)",
                   eng: "Consumer Price Index",
-                  value: data.macroIndicators.cpi ? `${data.macroIndicators.cpi.toFixed(1)}%` : "2.5%",
+                  value: data.macroIndicators.cpi ? `${data.macroIndicators.cpi.toFixed(1)}%` : `${MACRO_DEFAULTS.cpi}%`,
+                  isEstimate: !data.macroIndicators.cpi || data.macroIndicators.cpi === MACRO_DEFAULTS.cpi,
                   color: "text-yellow-500",
                 },
                 {
                   label: "실업률",
                   eng: "Unemployment Rate",
-                  value: data.macroIndicators.unemploymentRate ? `${data.macroIndicators.unemploymentRate.toFixed(1)}%` : "3.8%",
+                  value: data.macroIndicators.unemploymentRate ? `${data.macroIndicators.unemploymentRate.toFixed(1)}%` : `${MACRO_DEFAULTS.unemploymentRate}%`,
+                  isEstimate: !data.macroIndicators.unemploymentRate || data.macroIndicators.unemploymentRate === MACRO_DEFAULTS.unemploymentRate,
                   color: "text-cyan-500",
                 },
                 {
                   label: "GDP 성장률",
                   eng: "GDP Growth Rate",
-                  value: data.macroIndicators.gdpGrowth ? `${data.macroIndicators.gdpGrowth.toFixed(1)}%` : "2.2%",
+                  value: data.macroIndicators.gdpGrowth ? `${data.macroIndicators.gdpGrowth.toFixed(1)}%` : `${MACRO_DEFAULTS.gdpGrowth}%`,
+                  isEstimate: !data.macroIndicators.gdpGrowth || data.macroIndicators.gdpGrowth === MACRO_DEFAULTS.gdpGrowth,
                   color: "text-purple-500",
                 },
               ].map((item, i) => (
                 <Card key={i} className="pulse-glow depth-3d">
                   <CardContent>
-                    <div className="text-xs text-gray-400 mb-1">{item.label}</div>
+                    <div className="flex items-center gap-2 mb-1">
+                      <div className="text-xs text-gray-400">{item.label}</div>
+                      {item.isEstimate && (
+                        <Badge variant="warning" className="text-[9px] px-1 py-0">추정치</Badge>
+                      )}
+                    </div>
                     <div className="text-[10px] text-gray-600 mb-3">{item.eng}</div>
                     <div className={`text-2xl font-bold ${item.color} number-glow`}>
                       {typeof item.value === 'number' ? (
@@ -240,6 +279,69 @@ export default function MarketPage() {
                   </CardContent>
                 </Card>
               ))}
+            </div>
+          </div>
+        )}
+
+        {/* 선행 지표 점수 */}
+        {leadingScore && (
+          <div className="mb-8">
+            <div className="flex items-center gap-3 mb-4">
+              <TrendingUp className="w-6 h-6 text-[#00d4ff]" />
+              <h2 className="font-orbitron text-xl font-bold text-[#00d4ff]">
+                LEADING INDICATORS (선행 지표 점수)
+              </h2>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <Card className="pulse-glow depth-3d">
+                <CardContent>
+                  <div className="text-xs text-gray-400 mb-1">종합 점수</div>
+                  <div className="text-[10px] text-gray-600 mb-3">Total Score (-20 ~ +20)</div>
+                  <div className={`text-3xl font-bold number-glow ${
+                    leadingScore.totalScore > 10 ? 'text-green-500' :
+                    leadingScore.totalScore > 0 ? 'text-blue-500' :
+                    leadingScore.totalScore > -10 ? 'text-orange-500' : 'text-red-500'
+                  }`}>
+                    <CountUp end={leadingScore.totalScore} duration={1200} decimals={0} prefix={leadingScore.totalScore > 0 ? "+" : ""} />
+                  </div>
+                </CardContent>
+              </Card>
+
+              {leadingScore.putCallRatio && (
+                <Card className="pulse-glow depth-3d">
+                  <CardContent>
+                    <div className="text-xs text-gray-400 mb-1">Put/Call 비율 (추정)</div>
+                    <div className="text-[10px] text-gray-600 mb-3">Estimated Put/Call Ratio</div>
+                    <div className="text-2xl font-bold text-white number-glow">
+                      <CountUp end={leadingScore.putCallRatio.ratio} duration={1200} decimals={2} />
+                    </div>
+                    <div className="text-xs text-gray-400 mt-2">
+                      {leadingScore.putCallRatio.interpretation === 'extreme_greed' && '🟢 극단적 탐욕'}
+                      {leadingScore.putCallRatio.interpretation === 'greed' && '🟢 탐욕'}
+                      {leadingScore.putCallRatio.interpretation === 'neutral' && '⚪ 중립'}
+                      {leadingScore.putCallRatio.interpretation === 'fear' && '🟡 공포'}
+                      {leadingScore.putCallRatio.interpretation === 'extreme_fear' && '🔴 극단적 공포'}
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
+              {leadingScore.shortRatio && leadingScore.shortRatio.shortPercentFloat !== null && (
+                <Card className="pulse-glow depth-3d">
+                  <CardContent>
+                    <div className="text-xs text-gray-400 mb-1">공매도 비율 (SPY)</div>
+                    <div className="text-[10px] text-gray-600 mb-3">Short % of Float</div>
+                    <div className="text-2xl font-bold text-white number-glow">
+                      <CountUp end={leadingScore.shortRatio.shortPercentFloat} duration={1200} decimals={1} suffix="%" />
+                    </div>
+                    <div className="text-xs text-gray-400 mt-2">
+                      {leadingScore.shortRatio.interpretation === 'bullish' && '🟢 숏스퀴즈 가능'}
+                      {leadingScore.shortRatio.interpretation === 'neutral' && '⚪ 중립'}
+                      {leadingScore.shortRatio.interpretation === 'bearish' && '🔴 하락 신호'}
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
             </div>
           </div>
         )}

@@ -6,11 +6,12 @@ interface CountUpProps {
   end: number;
   duration?: number;
   decimals?: number;
+  prefix?: string;
   suffix?: string;
   className?: string;
 }
 
-export function CountUp({ end, duration = 1000, decimals = 0, suffix = "", className = "" }: CountUpProps) {
+export function CountUp({ end, duration = 1000, decimals = 0, prefix = "", suffix = "", className = "" }: CountUpProps) {
   const [count, setCount] = useState(0);
   const startTimeRef = useRef<number | null>(null);
 
@@ -38,6 +39,7 @@ export function CountUp({ end, duration = 1000, decimals = 0, suffix = "", class
 
   return (
     <span className={className}>
+      {prefix}
       {count.toFixed(decimals).replace(/\.0+$/, "")}
       {suffix}
     </span>
