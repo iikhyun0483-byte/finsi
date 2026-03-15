@@ -2,8 +2,24 @@
 // DART 오픈API: https://opendart.fss.or.kr
 // 무료, 일 10,000건
 
-const DART_API_KEY = process.env.DART_API_KEY!
+const DART_API_KEY = process.env.DART_API_KEY
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY
 const DART_BASE    = 'https://opendart.fss.or.kr/api'
+
+// 중요도 임계값 상수
+export const IMPORTANCE_THRESHOLDS = {
+  MIN_SAVE: 5,    // 저장 최소 중요도
+  MIN_AI: 7,      // AI 요약 최소 중요도
+  FILTERS: [5, 7, 9] as const,  // UI 필터 옵션
+}
+
+// 환경변수 검증
+export function validateEnv(): { valid: boolean; missing: string[] } {
+  const missing: string[] = []
+  if (!DART_API_KEY) missing.push('DART_API_KEY')
+  if (!GEMINI_API_KEY) missing.push('GEMINI_API_KEY')
+  return { valid: missing.length === 0, missing }
+}
 
 export interface DartDisclosure {
   rceptNo:     string
@@ -19,11 +35,29 @@ export async function fetchRecentDisclosures(
   startDate: string,  // YYYYMMDD
   endDate:   string
 ): Promise<DartDisclosure[]> {
+  if (!DART_API_KEY) {
+    throw new Error('DART_API_KEY 환경변수가 설정되지 않았습니다. .env.local에 추가하세요.')
+  }
+
   const url = `${DART_BASE}/list.json?crtfc_key=${DART_API_KEY}&bgn_de=${startDate}&end_de=${endDate}&page_count=100`
   const res  = await fetch(url, { next: { revalidate: 300 } })
+
+  if (!res.ok) {
+    throw new Error(`DART API 오류: ${res.status} ${res.statusText}`)
+  }
+
   const data = await res.json()
-  if (data.status !== '000') return []
-  return (data.list ?? []).map((d: Record<string, string>) => ({
+
+  if (data.status !== '000') {
+    const errorMsg = data.message || `DART API 상태 코드: ${data.status}`
+    throw new Error(errorMsg)
+  }
+
+  if (!data.list || data.list.length === 0) {
+    return []
+  }
+
+  return data.list.map((d: Record<string, string>) => ({
     rceptNo:   d.rcept_no,
     corpName:  d.corp_name,
     stockCode: d.stock_code || null,
@@ -62,21 +96,47 @@ export function calcImportance(reportNm: string, rmk: string): number {
   return score
 }
 
+// AI 요약 프롬프트 상수
+const AI_SUMMARY_PROMPT = (corpName: string, title: string) =>
+  `주식 투자자 관점에서 다음 공시를 3줄로 요약해. 회사: ${corpName}, 공시: ${title}. 형식: 1.핵심내용 2.주가영향 3.투자자행동`
+
 // Gemini AI 요약 (3줄)
 export async function summarizeDisclosure(title: string, corpName: string): Promise<string> {
+  if (!GEMINI_API_KEY) {
+    console.warn('GEMINI_API_KEY 환경변수가 설정되지 않았습니다. AI 요약을 건너뜁니다.')
+    return '(AI 요약 사용 불가 - API 키 미설정)'
+  }
+
   try {
-    const res = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=' + process.env.GEMINI_API_KEY, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{
-          parts: [{ text: `주식 투자자 관점에서 다음 공시를 3줄로 요약해. 회사: ${corpName}, 공시: ${title}. 형식: 1.핵심내용 2.주가영향 3.투자자행동` }]
-        }]
-      })
-    })
+    const res = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{
+            parts: [{ text: AI_SUMMARY_PROMPT(corpName, title) }]
+          }]
+        })
+      }
+    )
+
+    if (!res.ok) {
+      console.error(`Gemini API 오류: ${res.status} ${res.statusText}`)
+      return '(AI 요약 실패 - API 오류)'
+    }
+
     const data = await res.json()
-    return data.candidates?.[0]?.content?.parts?.[0]?.text ?? '요약 실패'
-  } catch {
-    return '요약 불가'
+    const summary = data.candidates?.[0]?.content?.parts?.[0]?.text
+
+    if (!summary) {
+      console.warn('Gemini API 응답에 요약 텍스트가 없습니다:', data)
+      return '(AI 요약 실패 - 응답 없음)'
+    }
+
+    return summary.trim()
+  } catch (error) {
+    console.error('AI 요약 중 예외 발생:', error)
+    return '(AI 요약 불가 - 오류 발생)'
   }
 }
