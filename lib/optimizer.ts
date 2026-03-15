@@ -78,62 +78,86 @@ async function calcFactorAccuracy(): Promise<Record<string, number>> {
 }
 
 export async function runOptimization(): Promise<OptimizationResult> {
-  const { count } = await supabase
-    .from('signal_tracking')
-    .select('*', { count: 'exact', head: true })
-    .not('is_correct_7d', 'is', null)
+  try {
+    const { count } = await supabase
+      .from('signal_tracking')
+      .select('*', { count: 'exact', head: true })
+      .not('is_correct_7d', 'is', null)
 
-  const signalCount   = count ?? 0
-  const isSignificant = signalCount >= MIN_SIGNALS_FOR_OPTIMIZATION
+    const signalCount   = count ?? 0
+    const isSignificant = signalCount >= MIN_SIGNALS_FOR_OPTIMIZATION
 
-  const { data: recent } = await supabase
-    .from('signal_tracking')
-    .select('is_correct_7d')
-    .not('is_correct_7d', 'is', null)
-    .order('created_at', { ascending: false })
-    .limit(RECENT_ACCURACY_WINDOW)
+    const { data: recent } = await supabase
+      .from('signal_tracking')
+      .select('is_correct_7d')
+      .not('is_correct_7d', 'is', null)
+      .order('created_at', { ascending: false })
+      .limit(RECENT_ACCURACY_WINDOW)
 
-  const accuracy7d = recent && recent.length > 0
-    ? recent.filter(d => d.is_correct_7d).length / recent.length
-    : 0
+    const accuracy7d = recent && recent.length > 0
+      ? recent.filter(d => d.is_correct_7d).length / recent.length
+      : 0
 
-  const factorWeights = await calcFactorAccuracy()
-  const total = Object.values(factorWeights).reduce((s, v) => s + v, 0)
-  const normalized: Record<string, number> = {}
-  Object.keys(factorWeights).forEach(k => {
-    normalized[k] = Math.round(factorWeights[k] / total * 100) / 100
-  })
+    const factorWeights = await calcFactorAccuracy()
+    const total = Object.values(factorWeights).reduce((s, v) => s + v, 0)
+    const normalized: Record<string, number> = {}
+    Object.keys(factorWeights).forEach(k => {
+      normalized[k] = Math.round(factorWeights[k] / total * 100) / 100
+    })
 
-  const changes: OptimizationResult['changes'] = []
+    const changes: OptimizationResult['changes'] = []
+    let newMinScore = DEFAULT_MIN_SIGNAL_SCORE
 
-  if (isSignificant) {
-    // 정확도 임계값 이하면 진입 임계값 높이기 권장
-    if (accuracy7d < ACCURACY_THRESHOLD) {
-      changes.push({
-        param: 'min_signal_score',
-        old: DEFAULT_MIN_SIGNAL_SCORE,
-        new: RAISED_MIN_SIGNAL_SCORE,
-        reason: `정확도 ${(accuracy7d*100).toFixed(1)}% — 임계값 상향으로 품질 개선`
+    if (isSignificant) {
+      // 정확도 임계값 이하면 진입 임계값 높이기
+      if (accuracy7d < ACCURACY_THRESHOLD) {
+        newMinScore = RAISED_MIN_SIGNAL_SCORE
+        changes.push({
+          param: 'min_signal_score',
+          old: DEFAULT_MIN_SIGNAL_SCORE,
+          new: RAISED_MIN_SIGNAL_SCORE,
+          reason: `정확도 ${(accuracy7d*100).toFixed(1)}% — 임계값 상향으로 품질 개선`
+        })
+      }
+
+      // settings 테이블에 최적화 결과 저장 (실제 적용)
+      await supabase.from('settings').upsert({
+        user_id: 'default',
+        factor_weights: normalized,
+        min_signal_score: newMinScore,
+        last_optimized_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      }, { onConflict: 'user_id' })
+
+      // 로그 저장
+      await supabase.from('optimization_log').insert({
+        run_date:    new Date().toISOString().slice(0,10),
+        signal_count: signalCount,
+        accuracy_7d: accuracy7d,
+        best_factors: normalized,
+        changes_made: changes,
       })
     }
 
-    // 로그 저장
-    await supabase.from('optimization_log').insert({
-      run_date:    new Date().toISOString().slice(0,10),
-      signal_count: signalCount,
-      accuracy_7d: accuracy7d,
-      best_factors: normalized,
-      changes_made: changes,
-    })
-  }
-
-  return {
-    signalCount, accuracy7d, isSignificant,
-    factorWeights: normalized, changes,
-    recommendation: isSignificant
-      ? accuracy7d >= 0.6
-        ? '현재 파라미터 양호. 유지 권장'
-        : '정확도 개선 필요. 진입 임계값 상향 권장'
-      : `최적화 비활성 (${signalCount}/100개)`,
+    return {
+      signalCount, accuracy7d, isSignificant,
+      factorWeights: normalized, changes,
+      recommendation: isSignificant
+        ? accuracy7d >= 0.6
+          ? '현재 파라미터 양호. 유지 권장'
+          : '정확도 개선 필요. 진입 임계값 상향 적용됨'
+        : `최적화 비활성 (${signalCount}/100개)`,
+    }
+  } catch (error) {
+    console.error('[Optimizer] Error:', error)
+    // 기본값 반환
+    return {
+      signalCount: 0,
+      accuracy7d: 0,
+      isSignificant: false,
+      factorWeights: DEFAULT_FACTOR_WEIGHTS,
+      changes: [],
+      recommendation: '데이터 로드 실패'
+    }
   }
 }

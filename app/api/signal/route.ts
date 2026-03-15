@@ -43,6 +43,16 @@ export async function GET() {
     const config = await getSystemConfig();
     const allSymbols = await getEnabledSymbols();
 
+    // 0-1. 최적화된 설정 로드 (min_signal_score)
+    const { data: settings } = await supabase
+      .from('settings')
+      .select('min_signal_score')
+      .eq('user_id', 'default')
+      .single();
+
+    const minSignalScore = settings?.min_signal_score ?? 70;
+    console.log(`⚙️ 최소 신호 점수: ${minSignalScore}점 (최적화 적용)`);
+
     console.log(`✅ 활성 심볼: ${allSymbols.length}개`);
     console.log(`⚙️ API 재시도: ${config.API_RETRY_COUNT}회, 딜레이: ${config.API_RETRY_DELAY_MS}ms`);
 
@@ -149,6 +159,10 @@ export async function GET() {
       price_krw: Math.round(signal.price * exchangeRate),
     }));
 
+    // 5-1. 최적화된 임계값 적용 (min_signal_score 이상만 필터링)
+    const filteredSignals = signalsWithKRW.filter(signal => signal.score >= minSignalScore);
+    console.log(`🎯 신호 필터링: ${signalsWithKRW.length}개 → ${filteredSignals.length}개 (임계값: ${minSignalScore}점)`);
+
     // 6. Supabase에 일괄 저장 (upsert with UNIQUE constraint)
     // 사전 조건: signals 테이블에 signals_symbol_unique 제약 필요
     // SQL: ALTER TABLE signals ADD CONSTRAINT signals_symbol_unique UNIQUE (symbol);
@@ -208,9 +222,10 @@ export async function GET() {
 
     return NextResponse.json({
       success: true,
-      signals: signalsWithKRW.sort((a, b) => b.score - a.score),
+      signals: filteredSignals.sort((a, b) => b.score - a.score),
       macroIndicators,
       exchangeRate,
+      minSignalScore, // 현재 적용된 임계값 클라이언트에 전달
     });
   } catch (error) {
     console.error("Signal generation error:", error);

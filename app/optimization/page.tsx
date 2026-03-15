@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import type { OptimizationResult } from '@/lib/optimizer'
 import UnlockGate from '@/components/UnlockGate'
 
@@ -7,22 +7,60 @@ export default function OptimizationPage() {
   const [result,  setResult]  = useState<OptimizationResult | null>(null)
   const [history, setHistory] = useState<Array<Record<string, unknown>>>([])
   const [loading, setLoading] = useState(false)
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null)
 
-  const run = async () => {
-    setLoading(true)
-    const res = await fetch('/api/optimization')
-    const data = await res.json()
-    setResult(data.result)
-    setHistory(data.history ?? [])
-    setLoading(false)
+  const showToast = (message: string, type: 'success' | 'error' | 'info' = 'info') => {
+    setToast({ message, type })
+    setTimeout(() => setToast(null), 5000)
   }
 
-  useEffect(() => { run() }, [])
+  const run = useCallback(async () => {
+    setLoading(true)
+    try {
+      const res = await fetch('/api/optimization')
+      const data = await res.json()
+
+      if (data.error) {
+        showToast(`오류: ${data.error}`, 'error')
+        return
+      }
+
+      setResult(data.result)
+      setHistory(data.history ?? [])
+
+      if (data.result?.isSignificant) {
+        if (data.result.changes.length > 0) {
+          showToast('최적화 완료! 파라미터가 자동 적용되었습니다', 'success')
+        } else {
+          showToast('최적화 완료! 현재 파라미터 유지', 'info')
+        }
+      } else {
+        showToast('신호 데이터 부족 (100개 이상 필요)', 'info')
+      }
+    } catch (error) {
+      showToast(`오류: ${(error as Error).message}`, 'error')
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => { run() }, [run])
 
   return (
     <UnlockGate minSignals={100} featureName="파라미터 자동 최적화">
     <div className="min-h-screen bg-[#0a0e1a] text-white p-4 md:p-6">
       <div className="max-w-3xl mx-auto">
+        {/* 토스트 알림 */}
+        {toast && (
+          <div className={`fixed top-4 right-4 z-50 px-4 py-3 rounded-lg shadow-lg transition-opacity ${
+            toast.type === 'success' ? 'bg-green-600' :
+            toast.type === 'error' ? 'bg-red-600' :
+            'bg-blue-600'
+          }`}>
+            <p className="text-sm font-medium text-white">{toast.message}</p>
+          </div>
+        )}
+
         <div className="flex justify-between items-center mb-6">
           <div>
             <h1 className="text-2xl font-bold text-orange-400">파라미터 자동 최적화</h1>
