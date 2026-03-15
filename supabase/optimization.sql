@@ -58,6 +58,9 @@ CREATE TABLE IF NOT EXISTS settings (
   factor_weights    jsonb DEFAULT '{"momentum": 0.25, "value": 0.20, "quality": 0.25, "lowVol": 0.15, "volume": 0.15}'::jsonb,
   min_signal_score  integer DEFAULT 70 CHECK (min_signal_score >= 0 AND min_signal_score <= 100),
   last_optimized_at timestamptz,
+  ml_weights        jsonb,
+  ml_trained_at     timestamptz,
+  ml_sample_count   integer DEFAULT 0,
   updated_at        timestamptz DEFAULT now(),
   UNIQUE(user_id)
 );
@@ -68,10 +71,13 @@ VALUES ('default', '{"momentum": 0.25, "value": 0.20, "quality": 0.25, "lowVol":
 ON CONFLICT (user_id) DO NOTHING;
 
 -- 코멘트 추가
-COMMENT ON TABLE settings IS '사용자 설정 (팩터 가중치, 신호 임계값 등)';
+COMMENT ON TABLE settings IS '사용자 설정 (팩터 가중치, 신호 임계값, ML 모델 등)';
 COMMENT ON COLUMN settings.factor_weights IS '최적화된 팩터 가중치 (자동 업데이트)';
 COMMENT ON COLUMN settings.min_signal_score IS '최소 신호 점수 임계값 (자동 조정 가능)';
 COMMENT ON COLUMN settings.last_optimized_at IS '마지막 최적화 실행 시각';
+COMMENT ON COLUMN settings.ml_weights IS 'ML 모델 학습된 가중치 (로지스틱 회귀)';
+COMMENT ON COLUMN settings.ml_trained_at IS 'ML 모델 마지막 학습 시각';
+COMMENT ON COLUMN settings.ml_sample_count IS 'ML 학습 시 사용된 샘플 개수';
 
 -- RLS 정책 (선택사항 - 필요시 주석 해제)
 -- ALTER TABLE signal_tracking ENABLE ROW LEVEL SECURITY;

@@ -10,13 +10,8 @@ const supabase = createClient(
 )
 
 export interface MLFeatures {
-  signalScore:   number   // 0~100
-  factorScore:   number   // 복합 팩터 점수
-  supplyScore:   number   // 수급 점수
-  sentimentScore: number  // 감정 점수
-  momentum12m:   number   // 12개월 모멘텀
-  volatility:    number   // 변동성
-  regimeCode:    number   // 0=하락 1=횡보 2=상승
+  signalScore:   number   // 0~100 (규칙 기반 신호 점수)
+  factorScore:   number   // -3~3 (팩터 스코어)
 }
 
 export interface MLPrediction {
@@ -73,17 +68,51 @@ export async function trainAndPredict(features: MLFeatures): Promise<MLPredictio
     }
   }
 
-  // 학습 데이터 준비 (신호점수를 주요 피처로)
-  const X = data.map(d => [
-    d.signal_score / 100,
-    Math.min(Math.max((d.return_7d ?? 0) * 10, -1), 1),
-  ])
-  const y = data.map(d => d.is_correct_7d ? 1 : 0)
+  // 1. settings에서 저장된 weights 확인
+  const { data: settings } = await supabase
+    .from('settings')
+    .select('ml_weights, ml_trained_at, ml_sample_count')
+    .eq('user_id', 'default')
+    .single()
 
-  const weights = trainLogistic(X, y)
+  let weights: number[]
 
-  // 예측
-  const featureVec = [features.signalScore / 100, features.factorScore / 100]
+  // 2. 재학습 조건: weights 없거나, 샘플 개수가 20% 이상 증가했을 때
+  const shouldRetrain = !settings?.ml_weights ||
+    !settings?.ml_sample_count ||
+    data.length > (settings.ml_sample_count * 1.2)
+
+  if (shouldRetrain) {
+    console.log(`[ML] 재학습 시작 (샘플: ${data.length}개)`)
+
+    // 학습 데이터 준비
+    const X = data.map(d => [
+      d.signal_score / 100,
+      Math.min(Math.max((d.return_7d ?? 0) * 10, -1), 1),
+    ])
+    const y = data.map(d => d.is_correct_7d ? 1 : 0)
+
+    // 학습 실행
+    weights = trainLogistic(X, y)
+
+    // 3. 학습된 weights를 settings에 저장
+    await supabase.from('settings').upsert({
+      user_id: 'default',
+      ml_weights: weights,
+      ml_trained_at: new Date().toISOString(),
+      ml_sample_count: data.length,
+      updated_at: new Date().toISOString()
+    }, { onConflict: 'user_id' })
+
+    console.log(`[ML] 학습 완료 및 저장 (weights: ${weights.length}개)`)
+  } else {
+    // 저장된 weights 재사용
+    weights = settings.ml_weights as number[]
+    console.log(`[ML] 저장된 weights 재사용 (마지막 학습: ${settings.ml_trained_at})`)
+  }
+
+  // 4. 예측
+  const featureVec = [features.signalScore / 100, features.factorScore]
   const dot = weights[0] + featureVec.reduce((s, f, i) => s + weights[i+1] * f, 0)
   const probability = sigmoid(dot)
 
