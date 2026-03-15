@@ -73,11 +73,13 @@ export async function GET() {
 
       if (historical && historical.length >= 200) {
         const prices = historical.map((h) => h.close);
+        const volumes = historical.map((h) => h.volume);
         signals.push({
           symbol: symbolConfig.symbol,
           name: symbolConfig.name,
           assetType: symbolConfig.asset_type as any,
           prices,
+          volumes,
           macroIndicators,
         });
         console.log(`✅ ${symbolConfig.symbol} 데이터 수집 완료 (${historical.length}일)`);
@@ -107,12 +109,14 @@ export async function GET() {
 
       if (historical && historical.length >= 200) {
         const prices = historical.map((h) => h.price);
+        // 암호화폐는 거래량 데이터가 없으므로 undefined
         console.log(`✅ ${symbolConfig.symbol} 데이터 수집 완료 (${historical.length}일)`);
         return {
           symbol: symbolConfig.symbol,
           name: symbolConfig.name,
           assetType: "crypto" as const,
           prices,
+          volumes: undefined,
           macroIndicators,
         };
       } else {
@@ -145,25 +149,34 @@ export async function GET() {
       price_krw: Math.round(signal.price * exchangeRate),
     }));
 
-    // 6. Supabase에 저장 (기본 필드만)
-    for (const signal of signalsWithKRW) {
-      await supabase.from("signals").insert({
-        symbol: signal.symbol,
-        name: signal.name,
-        asset_type: signal.assetType,
-        score: signal.score,
-        action: signal.action,
-        price: signal.price,
-        price_krw: signal.price_krw,
-        layer1_score: signal.layer1Score,
-        layer2_score: signal.layer2Score,
-        layer3_score: signal.layer3Score,
-        rsi: signal.rsi,
-        macd: signal.macd,
-        fear_greed: macroIndicators.fearGreed,
-        high_risk: signal.highRisk,
-      });
+    // 6. Supabase에 일괄 저장 (upsert)
+    const signalsToSave = signalsWithKRW.map((signal) => ({
+      symbol: signal.symbol,
+      name: signal.name,
+      asset_type: signal.assetType,
+      score: signal.score,
+      action: signal.action,
+      price: signal.price,
+      price_krw: signal.price_krw,
+      layer1_score: signal.layer1Score,
+      layer2_score: signal.layer2Score,
+      layer3_score: signal.layer3Score,
+      rsi: signal.rsi,
+      macd: signal.macd,
+      fear_greed: macroIndicators.fearGreed,
+      high_risk: signal.highRisk,
+    }));
+
+    const { error: upsertError } = await supabase
+      .from("signals")
+      .upsert(signalsToSave, { onConflict: "symbol" });
+
+    if (upsertError) {
+      console.error("❌ Supabase upsert 실패:", upsertError);
+      throw new Error(`DB 저장 실패: ${upsertError.message}`);
     }
+
+    console.log(`✅ DB 저장 완료: ${signalsToSave.length}개 신호`);
 
     console.log(`✅ Enhanced 신호 생성 완료 (펀더멘털: ${signalsWithKRW.filter(s => s.fundamentals).length}개, 뉴스: ${signalsWithKRW.filter(s => s.news).length}개)`);
 
