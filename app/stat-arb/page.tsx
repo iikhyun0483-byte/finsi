@@ -62,36 +62,57 @@ export default function StatArbPage() {
   const [loading,  setLoading]     = useState(false)
   const [error,    setError]       = useState<string | null>(null)
   const [warnings, setWarnings]    = useState<string[]>([])
+  const [customPairs, setCustomPairs] = useState<typeof KNOWN_PAIRS>([])
+  const [newSymbol1, setNewSymbol1] = useState('')
+  const [newSymbol2, setNewSymbol2] = useState('')
+  const [newLabel, setNewLabel] = useState('')
+
+  const allPairs = [...KNOWN_PAIRS, ...customPairs]
 
   const runAnalysis = async () => {
     setError(null); setWarnings([]); setLoading(true)
     try {
-      const pairsRaw = await Promise.all(
-        KNOWN_PAIRS.map(async p => {
-          const [r1, r2] = await Promise.allSettled([
-            fetch(`/api/realtime-prices?symbol=${encodeURIComponent(p.symbol1)}`).then(r=>r.json()),
-            fetch(`/api/realtime-prices?symbol=${encodeURIComponent(p.symbol2)}`).then(r=>r.json()),
-          ])
-          const d1 = r1.status==='fulfilled' ? r1.value : {}
-          const d2 = r2.status==='fulfilled' ? r2.value : {}
-          // 다양한 응답 구조 대응
-          const raw1 = d1.prices ?? d1.history ?? d1.data ?? []
-          const raw2 = d2.prices ?? d2.history ?? d2.data ?? []
-          return {
-            symbol1: p.symbol1, symbol2: p.symbol2,
-            prices1: raw1,  // 서버에서 extractCloseprices로 처리
-            prices2: raw2,
-          }
-        })
-      )
+      // 3개씩 배치 처리 (500ms 간격)
+      const BATCH_SIZE = 3
+      const pairsRaw: any[] = []
 
-      // 데이터 경고 수집
+      for (let i = 0; i < allPairs.length; i += BATCH_SIZE) {
+        const batch = allPairs.slice(i, i + BATCH_SIZE)
+
+        const batchResults = await Promise.all(
+          batch.map(async p => {
+            const [r1, r2] = await Promise.allSettled([
+              fetch(`/api/realtime-prices?symbol=${encodeURIComponent(p.symbol1)}`).then(r=>r.json()),
+              fetch(`/api/realtime-prices?symbol=${encodeURIComponent(p.symbol2)}`).then(r=>r.json()),
+            ])
+            const d1 = r1.status==='fulfilled' ? r1.value : {}
+            const d2 = r2.status==='fulfilled' ? r2.value : {}
+            // 다양한 응답 구조 대응
+            const raw1 = d1.prices ?? d1.history ?? d1.data ?? []
+            const raw2 = d2.prices ?? d2.history ?? d2.data ?? []
+            return {
+              symbol1: p.symbol1, symbol2: p.symbol2,
+              prices1: raw1,  // 서버에서 extractCloseprices로 처리
+              prices2: raw2,
+            }
+          })
+        )
+
+        pairsRaw.push(...batchResults)
+
+        // 마지막 배치가 아니면 500ms 대기
+        if (i + BATCH_SIZE < allPairs.length) {
+          await new Promise(resolve => setTimeout(resolve, 500))
+        }
+      }
+
+      // 데이터 경고 수집 (60일 기준)
       const warns: string[] = []
       pairsRaw.forEach(p => {
         const n1 = extractCloseprices(p.prices1).length
         const n2 = extractCloseprices(p.prices2).length
-        if (n1 < 20) warns.push(`${p.symbol1}: 데이터 ${n1}개 (20개 이상 필요)`)
-        if (n2 < 20) warns.push(`${p.symbol2}: 데이터 ${n2}개 (20개 이상 필요)`)
+        if (n1 < 60) warns.push(`${p.symbol1}: 데이터 ${n1}개 (60개 이상 필요)`)
+        if (n2 < 60) warns.push(`${p.symbol2}: 데이터 ${n2}개 (60개 이상 필요)`)
       })
       setWarnings(warns)
 
@@ -156,6 +177,79 @@ export default function StatArbPage() {
           </div>
         </div>
 
+        {/* 사용자 정의 페어 추가 */}
+        <div className="bg-gray-900 rounded-xl p-4 mb-6">
+          <p className="text-orange-400 text-xs font-semibold mb-3">사용자 정의 페어 추가</p>
+          <div className="flex flex-wrap gap-3 items-end">
+            <div>
+              <p className="text-gray-500 text-xs mb-1">종목 1</p>
+              <input
+                type="text"
+                value={newSymbol1}
+                onChange={e => setNewSymbol1(e.target.value.toUpperCase())}
+                placeholder="AAPL"
+                className="px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white text-sm w-24 focus:outline-none focus:border-orange-500"
+              />
+            </div>
+            <div>
+              <p className="text-gray-500 text-xs mb-1">종목 2</p>
+              <input
+                type="text"
+                value={newSymbol2}
+                onChange={e => setNewSymbol2(e.target.value.toUpperCase())}
+                placeholder="MSFT"
+                className="px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white text-sm w-24 focus:outline-none focus:border-orange-500"
+              />
+            </div>
+            <div>
+              <p className="text-gray-500 text-xs mb-1">설명 (선택)</p>
+              <input
+                type="text"
+                value={newLabel}
+                onChange={e => setNewLabel(e.target.value)}
+                placeholder="애플 vs 마이크로소프트"
+                className="px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white text-sm w-48 focus:outline-none focus:border-orange-500"
+              />
+            </div>
+            <button
+              onClick={() => {
+                if (newSymbol1 && newSymbol2) {
+                  setCustomPairs([...customPairs, {
+                    symbol1: newSymbol1,
+                    symbol2: newSymbol2,
+                    label: newLabel || `${newSymbol1} vs ${newSymbol2}`,
+                  }])
+                  setNewSymbol1('')
+                  setNewSymbol2('')
+                  setNewLabel('')
+                }
+              }}
+              disabled={!newSymbol1 || !newSymbol2}
+              className="px-4 py-2 bg-gray-700 hover:bg-gray-600 disabled:opacity-40 disabled:cursor-not-allowed rounded-lg text-sm font-medium transition-colors"
+            >
+              추가
+            </button>
+          </div>
+          {customPairs.length > 0 && (
+            <div className="mt-3 pt-3 border-t border-gray-800">
+              <p className="text-gray-500 text-xs mb-2">추가된 페어 ({customPairs.length}개)</p>
+              <div className="flex flex-wrap gap-2">
+                {customPairs.map((p, idx) => (
+                  <div key={idx} className="flex items-center gap-2 bg-gray-800 rounded-lg px-3 py-1.5">
+                    <span className="text-xs text-white">{p.symbol1}/{p.symbol2}</span>
+                    <button
+                      onClick={() => setCustomPairs(customPairs.filter((_, i) => i !== idx))}
+                      className="text-gray-500 hover:text-red-400 text-xs"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
         {error && (
           <div className="bg-red-900/30 border border-red-700 rounded-lg p-3 text-red-400 text-sm mb-4">{error}</div>
         )}
@@ -186,7 +280,7 @@ export default function StatArbPage() {
         {/* 페어 카드 */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {results.map(({ analysis, signal }) => {
-            const meta = KNOWN_PAIRS.find(p =>
+            const meta = allPairs.find(p =>
               p.symbol1===analysis.symbol1 && p.symbol2===analysis.symbol2
             )
             const col = SIG_STYLE[signal.signal]
@@ -205,7 +299,7 @@ export default function StatArbPage() {
                     <span className={`text-xs font-bold px-2 py-1 rounded ${col.text} bg-black/30`}>
                       {col.label}
                     </span>
-                    {!analysis.isPaired && analysis.dataPoints >= 20 && (
+                    {!analysis.isPaired && analysis.dataPoints >= 60 && (
                       <p className="text-gray-600 text-xs mt-1">공적분 약함</p>
                     )}
                   </div>
@@ -222,8 +316,9 @@ export default function StatArbPage() {
                   </div>
                   <div className="bg-black/20 rounded p-2">
                     <p className="text-gray-500">반감기</p>
-                    <p className={`font-bold ${analysis.halfLife<=60?'text-green-400':'text-gray-400'}`}>
-                      {analysis.halfLife>500 ? '∞' : `${analysis.halfLife.toFixed(0)}일`}
+                    <p className={`font-bold ${typeof analysis.halfLife === 'number' && analysis.halfLife<=60?'text-green-400':'text-gray-400'}`}>
+                      {typeof analysis.halfLife === 'string' ? analysis.halfLife :
+                       analysis.halfLife > 100 ? '발산' : `${analysis.halfLife.toFixed(0)}일`}
                     </p>
                   </div>
                   <div className="bg-black/20 rounded p-2">
@@ -248,7 +343,9 @@ export default function StatArbPage() {
         {results.length === 0 && !loading && (
           <div className="bg-gray-900 rounded-xl p-16 text-center">
             <p className="text-gray-500">페어 분석 실행 버튼을 누르세요</p>
-            <p className="text-gray-600 text-xs mt-2">6개 페어 동시 분석 — Engle-Granger 공적분 검정</p>
+            <p className="text-gray-600 text-xs mt-2">
+              {allPairs.length}개 페어 배치 분석 — Engle-Granger 공적분 검정
+            </p>
           </div>
         )}
 
