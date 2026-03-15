@@ -455,10 +455,10 @@ export default function RiskControlPage() {
             <div className="bg-black/30 rounded-lg p-3">
               <p className="text-gray-500 text-xs mb-1">기댓값 (EV)</p>
               <p className="text-white text-lg font-bold">
-                {((winRate/100 * avgWin/100) - ((100-winRate)/100 * avgLoss/100) * 100).toFixed(1)}%
+                {((winRate * avgWin - (100 - winRate) * avgLoss) / 100).toFixed(1)}%
               </p>
               <p className="text-gray-600 text-xs mt-1">
-                {((winRate/100 * avgWin/100) - ((100-winRate)/100 * avgLoss/100)) > 0.02 ? '양호' : ((winRate/100 * avgWin/100) - ((100-winRate)/100 * avgLoss/100)) > 0 ? '낮음' : '음수'}
+                {((winRate * avgWin - (100 - winRate) * avgLoss) / 100) > 2 ? '양호' : ((winRate * avgWin - (100 - winRate) * avgLoss) / 100) > 0 ? '낮음' : '음수'}
               </p>
             </div>
           </div>
