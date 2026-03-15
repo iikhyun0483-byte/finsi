@@ -1,6 +1,7 @@
 // app/api/performance/route.ts
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { calculatePerformance } from '@/lib/performance-calculator'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -19,6 +20,38 @@ export async function GET(req: NextRequest) {
       .limit(24)
     return NextResponse.json({ data: data ?? [] })
   }
+
+  if (action === 'generate') {
+    try {
+      // 성과 계산
+      const metrics = await calculatePerformance()
+
+      // performance_snapshots에 저장
+      const { error } = await supabase.from('performance_snapshots').upsert({
+        snapshot_date: new Date().toISOString().slice(0, 10),
+        total_value: metrics.totalValue,
+        cash: metrics.cash,
+        return_1m: metrics.return1m,
+        return_3m: metrics.return3m,
+        return_ytd: metrics.returnYtd,
+        sharpe_ratio: metrics.sharpeRatio,
+        max_dd: metrics.maxDd,
+        win_rate: metrics.winRate,
+        trade_count: metrics.tradeCount,
+      }, { onConflict: 'snapshot_date' })
+
+      if (error) throw error
+
+      return NextResponse.json({ success: true, data: metrics })
+    } catch (error) {
+      console.error('[Performance] Generate error:', error)
+      return NextResponse.json(
+        { error: (error as Error).message },
+        { status: 500 }
+      )
+    }
+  }
+
   return NextResponse.json({ error: 'unknown action' }, { status: 400 })
 }
 

@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 
 interface Snapshot {
   snapshot_date: string
@@ -16,27 +16,95 @@ interface Snapshot {
 export default function PerformancePage() {
   const [snapshots, setSnapshots] = useState<Snapshot[]>([])
   const [latest,    setLatest]    = useState<Snapshot | null>(null)
+  const [loading,   setLoading]   = useState(false)
+  const [generating, setGenerating] = useState(false)
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null)
+
+  const showToast = (message: string, type: 'success' | 'error' | 'info' = 'info') => {
+    setToast({ message, type })
+    setTimeout(() => setToast(null), 5000)
+  }
+
+  const loadSnapshots = useCallback(async () => {
+    setLoading(true)
+    try {
+      const res = await fetch('/api/performance?action=list')
+      if (!res.ok) throw new Error('데이터 로드 실패')
+
+      const data = await res.json()
+      setSnapshots(data.data ?? [])
+      setLatest(data.data?.[0] ?? null)
+    } catch (error) {
+      showToast(`오류: ${(error as Error).message}`, 'error')
+      console.error('[Performance] Load error:', error)
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  const generateSnapshot = useCallback(async () => {
+    setGenerating(true)
+    try {
+      const res = await fetch('/api/performance?action=generate')
+      if (!res.ok) {
+        const error = await res.json()
+        throw new Error(error.error || '스냅샷 생성 실패')
+      }
+
+      const data = await res.json()
+      if (!data.success) throw new Error('스냅샷 생성 실패')
+
+      showToast('성과 스냅샷 생성 완료', 'success')
+      await loadSnapshots()
+    } catch (error) {
+      showToast(`오류: ${(error as Error).message}`, 'error')
+      console.error('[Performance] Generate error:', error)
+    } finally {
+      setGenerating(false)
+    }
+  }, [loadSnapshots])
 
   useEffect(() => {
-    fetch('/api/performance?action=list')
-      .then(r => r.json())
-      .then(d => {
-        setSnapshots(d.data ?? [])
-        setLatest(d.data?.[0] ?? null)
-      })
-  }, [])
+    loadSnapshots()
+  }, [loadSnapshots])
 
   const retColor = (v: number) => v >= 0 ? 'text-green-400' : 'text-red-400'
 
   return (
     <div className="min-h-screen bg-[#0a0e1a] text-white p-4 md:p-6">
       <div className="max-w-5xl mx-auto">
+        {/* 토스트 알림 */}
+        {toast && (
+          <div className={`fixed top-4 right-4 z-50 px-4 py-3 rounded-lg shadow-lg transition-opacity ${
+            toast.type === 'success' ? 'bg-green-600' :
+            toast.type === 'error' ? 'bg-red-600' :
+            'bg-blue-600'
+          }`}>
+            <p className="text-sm font-medium text-white">{toast.message}</p>
+          </div>
+        )}
+
         <div className="mb-6">
-          <h1 className="text-2xl font-bold text-orange-400">성과 대시보드</h1>
-          <p className="text-gray-500 text-sm mt-1">실전 운용 성과 — 월별 자동 리포트</p>
+          <div className="flex justify-between items-center">
+            <div>
+              <h1 className="text-2xl font-bold text-orange-400">성과 대시보드</h1>
+              <p className="text-gray-500 text-sm mt-1">실전 운용 성과 — trade_history 기반 자동 계산</p>
+            </div>
+            <button
+              onClick={generateSnapshot}
+              disabled={generating || loading}
+              className="px-4 py-2 bg-orange-500 hover:bg-orange-600 disabled:opacity-40 rounded-lg text-sm font-semibold"
+            >
+              {generating ? '생성 중...' : '스냅샷 생성'}
+            </button>
+          </div>
         </div>
 
-        {latest ? (
+        {loading && !latest ? (
+          <div className="bg-gray-900 rounded-xl p-12 text-center text-gray-500 mb-6">
+            로딩 중...
+          </div>
+        ) : latest ? (
           <>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
               {[
