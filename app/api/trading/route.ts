@@ -2,6 +2,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { getCurrentPrice, getBalance, placeBuyOrder, placeSellOrder } from '@/lib/kis-api'
+import { recordAttribution } from '@/lib/attribution'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -129,6 +130,39 @@ export async function POST(req: NextRequest) {
         executed_at: new Date().toISOString(),
         profit_loss: 0, // 청산 시 계산
       })
+
+      // TODO: Attribution 기록 (포지션 청산 시)
+      // SELL 주문 완료 시 해당 포지션의 매수 정보를 조회하여 attribution 기록
+      //
+      // if (action === 'SELL') {
+      //   // 1. 해당 종목의 매수 포지션 조회 (positions 테이블 필요)
+      //   const { data: position } = await supabase
+      //     .from('positions')
+      //     .select('*')
+      //     .eq('symbol', symbol)
+      //     .eq('status', 'OPEN')
+      //     .single()
+      //
+      //   if (position) {
+      //     // 2. Attribution 기록
+      //     await recordAttribution({
+      //       signalId: position.signal_id,
+      //       symbol: symbol,
+      //       entryPrice: position.entry_price,
+      //       exitPrice: executedPrice,
+      //       quantity: quantity,
+      //       strategy: position.strategy || 'MANUAL',
+      //       entryDate: position.created_at,
+      //       factorScores: position.factor_scores
+      //     })
+      //
+      //     // 3. 포지션 상태 업데이트
+      //     await supabase
+      //       .from('positions')
+      //       .update({ status: 'CLOSED', closed_at: new Date().toISOString() })
+      //       .eq('id', position.id)
+      //   }
+      // }
     }
 
     return NextResponse.json({

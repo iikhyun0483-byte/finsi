@@ -27,25 +27,49 @@ export default function AttributionPage() {
   const [detail,  setDetail]  = useState<TradeDetail[]>([])
   const [tab,     setTab]     = useState<'summary' | 'detail'>('summary')
   const [loading, setLoading] = useState(true)
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' | 'warning' } | null>(null)
+
+  const showToast = useCallback((message: string, type: 'success' | 'error' | 'info' | 'warning' = 'info') => {
+    setToast({ message, type })
+    setTimeout(() => setToast(null), 5000)
+  }, [])
 
   const load = useCallback(async () => {
-    const [s, d] = await Promise.all([
-      fetch('/api/attribution?action=summary').then(r => r.json()),
-      fetch('/api/attribution?action=detail').then(r => r.json()),
-    ])
-    setSummary(s.data ?? [])
-    setDetail(d.data ?? [])
-    setLoading(false)
-  }, [])
+    try {
+      const [s, d] = await Promise.all([
+        fetch('/api/attribution?action=summary').then(r => r.json()),
+        fetch('/api/attribution?action=detail').then(r => r.json()),
+      ])
+      setSummary(s.data ?? [])
+      setDetail(d.data ?? [])
+    } catch (e) {
+      console.error('❌ Load error:', e)
+      showToast(`데이터 로드 실패: ${(e as Error).message}`, 'error')
+    } finally {
+      setLoading(false)
+    }
+  }, [showToast])
 
   useEffect(() => { load() }, [load])
 
   const totalPnl  = summary.reduce((s, a) => s + a.totalPnl, 0)
-  const bestStrat = summary[0]
+  const bestStrat = summary.length > 0 ? summary[0] : null
 
   return (
     <div className="min-h-screen bg-[#0a0e1a] text-white p-4 md:p-6">
       <div className="max-w-4xl mx-auto">
+        {/* 토스트 알림 */}
+        {toast && (
+          <div className={`fixed top-4 right-4 z-50 px-4 py-3 rounded-lg shadow-lg transition-opacity ${
+            toast.type === 'success' ? 'bg-green-600' :
+            toast.type === 'error' ? 'bg-red-600' :
+            toast.type === 'warning' ? 'bg-yellow-600' :
+            'bg-blue-600'
+          }`}>
+            <p className="text-sm font-medium text-white">{toast.message}</p>
+          </div>
+        )}
+
         <div className="mb-6">
           <h1 className="text-2xl font-bold text-orange-400">수익 귀속 분석</h1>
           <p className="text-gray-500 text-sm mt-1">
