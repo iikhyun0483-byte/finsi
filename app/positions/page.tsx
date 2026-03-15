@@ -58,7 +58,12 @@ export default function PositionsPage() {
       <div className="max-w-5xl mx-auto">
         <div className="flex justify-between items-center mb-6">
           <div>
-            <h1 className="text-2xl font-bold text-orange-400">포지션 관리</h1>
+            <div className="flex items-center gap-2">
+              <h1 className="text-2xl font-bold text-orange-400">포지션 관리</h1>
+              <span className="px-2 py-0.5 bg-yellow-600/20 border border-yellow-600/40 rounded text-xs text-yellow-400">
+                KIS 연동 예정
+              </span>
+            </div>
             <p className="text-gray-500 text-sm mt-1">실시간 손익 + 손절/목표가 자동 관리</p>
           </div>
           <button onClick={sync} disabled={syncing}

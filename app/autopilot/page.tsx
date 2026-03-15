@@ -95,10 +95,15 @@ export default function AutopilotPage() {
     <div className="min-h-screen bg-[#0a0e1a] text-white p-4 md:p-6">
       <div className="max-w-4xl mx-auto">
         <div className="mb-6">
-          <h1 className="text-2xl font-bold text-cyan-400 flex items-center gap-2">
-            <Bot className="w-7 h-7" />
-            Autopilot 제어판
-          </h1>
+          <div className="flex items-center gap-2 mb-1">
+            <h1 className="text-2xl font-bold text-cyan-400 flex items-center gap-2">
+              <Bot className="w-7 h-7" />
+              Autopilot 제어판
+            </h1>
+            <span className="px-2 py-0.5 bg-yellow-600/20 border border-yellow-600/40 rounded text-xs text-yellow-400">
+              KIS 연동 예정
+            </span>
+          </div>
           <p className="text-gray-500 text-sm mt-1">
             자동매매 설정 · 유니버스 관리 · 긴급 정지
           </p>

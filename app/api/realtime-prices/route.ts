@@ -35,7 +35,7 @@ export async function GET(request: NextRequest) {
       const isCrypto = symbol.includes('-USD') || ['BTC', 'ETH', 'SOL', 'XRP', 'ADA', 'DOGE'].includes(symbol.toUpperCase());
 
       if (isCrypto) {
-        // 암호화폐: CoinGecko API 사용
+        // 암호화폐: Binance API 사용
         const coinId = symbol.toLowerCase().replace('-usd', '');
         const cryptoData = await getCryptoHistorical(coinId, 365);
         historicalPrices = cryptoData.map(d => ({

@@ -14,6 +14,10 @@ let _token: KisToken | null = null
 
 // OAuth 토큰 발급 (24시간 유효)
 export async function getToken(): Promise<string> {
+  if (!KIS_APP_KEY || !KIS_APP_SECRET) {
+    throw new Error('KIS_APP_KEY 및 KIS_APP_SECRET 환경변수가 설정되지 않았습니다. KIS 연동 예정입니다.')
+  }
+
   if (_token && Date.now() < _token.expires_at - 60_000) {
     return _token.access_token
   }
@@ -36,6 +40,10 @@ export async function getToken(): Promise<string> {
 
 // 현재가 조회
 export async function getCurrentPrice(symbol: string): Promise<number> {
+  if (!KIS_APP_KEY || !KIS_APP_SECRET) {
+    throw new Error('KIS_APP_KEY 및 KIS_APP_SECRET 환경변수가 설정되지 않았습니다. KIS 연동 예정입니다.')
+  }
+
   const token = await getToken()
   const res = await fetch(
     `${KIS_BASE}/uapi/domestic-stock/v1/quotations/inquire-price?FID_COND_MRKT_DIV_CODE=J&FID_INPUT_ISCD=${symbol}`,
@@ -58,6 +66,10 @@ export async function getBalance(): Promise<{
   totalValue: number
   holdings: Array<{ symbol: string; quantity: number; currentPrice: number; value: number }>
 }> {
+  if (!KIS_APP_KEY || !KIS_APP_SECRET) {
+    throw new Error('KIS_APP_KEY 및 KIS_APP_SECRET 환경변수가 설정되지 않았습니다. KIS 연동 예정입니다.')
+  }
+
   const token = await getToken()
   const res = await fetch(
     `${KIS_BASE}/uapi/domestic-stock/v1/trading/inquire-balance?CANO=${process.env.KIS_ACCOUNT_NO}&ACNT_PRDT_CD=01&AFHR_FLPR_YN=N&OFL_YN=&INQR_DVSN=02&UNPR_DVSN=01&FUND_STTL_ICLD_YN=N&FNCG_AMT_AUTO_RDPT_YN=N&PRCS_DVSN=01&CTX_AREA_FK100=&CTX_AREA_NK100=`,
@@ -91,6 +103,14 @@ export async function placeBuyOrder(
   quantity: number,
   price:    number = 0  // 0 = 시장가
 ): Promise<{ orderNo: string; success: boolean; message: string }> {
+  if (!KIS_APP_KEY || !KIS_APP_SECRET) {
+    return {
+      orderNo: '',
+      success: false,
+      message: 'KIS_APP_KEY 및 KIS_APP_SECRET 환경변수가 설정되지 않았습니다. KIS 연동 예정입니다.'
+    }
+  }
+
   const token = await getToken()
   const res = await fetch(`${KIS_BASE}/uapi/domestic-stock/v1/trading/order-cash`, {
     method: 'POST',
@@ -125,6 +145,14 @@ export async function placeSellOrder(
   quantity: number,
   price:    number = 0
 ): Promise<{ orderNo: string; success: boolean; message: string }> {
+  if (!KIS_APP_KEY || !KIS_APP_SECRET) {
+    return {
+      orderNo: '',
+      success: false,
+      message: 'KIS_APP_KEY 및 KIS_APP_SECRET 환경변수가 설정되지 않았습니다. KIS 연동 예정입니다.'
+    }
+  }
+
   const token = await getToken()
   const res = await fetch(`${KIS_BASE}/uapi/domestic-stock/v1/trading/order-cash`, {
     method: 'POST',
