@@ -1,23 +1,39 @@
 'use client'
-import { useState, useEffect } from 'react'
-import { Bot, Power, Settings, AlertTriangle, Zap } from 'lucide-react'
+import { useState, useEffect, useCallback } from 'react'
+import { Bot, Power, Settings, AlertTriangle, Zap, Activity, Clock } from 'lucide-react'
 import { AutopilotConfig, DEFAULT_CONFIG } from '@/lib/autopilot'
+
+interface AutopilotStatus {
+  last_check_at?: string
+  signals_today: number
+  last_signal_at?: string
+  total_signals: number
+}
 
 export default function AutopilotPage() {
   const [config, setConfig] = useState<AutopilotConfig>(DEFAULT_CONFIG)
+  const [status, setStatus] = useState<AutopilotStatus | null>(null)
   const [loading, setLoading] = useState(false)
   const [universeInput, setUniverseInput] = useState('')
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null)
+  const [showEmergencyConfirm, setShowEmergencyConfirm] = useState(false)
 
-  const loadConfig = async () => {
+  const showToast = (message: string, type: 'success' | 'error' | 'info' = 'info') => {
+    setToast({ message, type })
+    setTimeout(() => setToast(null), 5000)
+  }
+
+  const loadConfig = useCallback(async () => {
     const res = await fetch('/api/autopilot?action=get')
     const data = await res.json()
     if (data.success) {
       setConfig(data.config)
+      setStatus(data.status)
       setUniverseInput(data.config.universe.join(','))
     }
-  }
+  }, [])
 
-  useEffect(() => { loadConfig() }, [])
+  useEffect(() => { loadConfig() }, [loadConfig])
 
   const saveConfig = async () => {
     setLoading(true)
@@ -35,11 +51,13 @@ export default function AutopilotPage() {
 
       const data = await res.json()
       if (data.success) {
-        alert('✅ 설정 저장 완료')
+        showToast('설정 저장 완료', 'success')
         loadConfig()
       } else {
-        alert(`❌ 저장 실패: ${data.error}`)
+        showToast(`저장 실패: ${data.error}`, 'error')
       }
+    } catch (error) {
+      showToast(`오류: ${(error as Error).message}`, 'error')
     } finally {
       setLoading(false)
     }
@@ -59,19 +77,21 @@ export default function AutopilotPage() {
       const data = await res.json()
       if (data.success) {
         setConfig({ ...config, is_active: data.is_active })
-        alert(data.is_active ? '✅ Autopilot 활성화' : '⏸️ Autopilot 비활성화')
+        showToast(
+          data.is_active ? 'Autopilot 활성화 완료' : 'Autopilot 비활성화',
+          data.is_active ? 'success' : 'info'
+        )
       }
+    } catch (error) {
+      showToast(`오류: ${(error as Error).message}`, 'error')
     } finally {
       setLoading(false)
     }
   }
 
-  const emergencyStop = async () => {
-    if (!confirm('⚠️ 긴급 정지: 모든 포지션을 청산하고 자동매매를 중지합니다. 계속하시겠습니까?')) {
-      return
-    }
-
+  const executeEmergencyStop = async () => {
     setLoading(true)
+    setShowEmergencyConfirm(false)
     try {
       const res = await fetch('/api/autopilot', {
         method: 'POST',
@@ -81,19 +101,76 @@ export default function AutopilotPage() {
 
       const data = await res.json()
       if (data.success) {
-        alert(`🛑 긴급 정지 완료: ${data.result.closedPositions}개 포지션 청산`)
+        showToast(`긴급 정지 완료: ${data.result.closedPositions}개 포지션 청산`, 'success')
         loadConfig()
       } else {
-        alert(`❌ 긴급 정지 실패: ${data.error}`)
+        showToast(`긴급 정지 실패: ${data.error}`, 'error')
       }
+    } catch (error) {
+      showToast(`오류: ${(error as Error).message}`, 'error')
     } finally {
       setLoading(false)
     }
   }
 
+  const formatTime = (isoString?: string) => {
+    if (!isoString) return '없음'
+    const date = new Date(isoString)
+    return date.toLocaleString('ko-KR', {
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    })
+  }
+
   return (
     <div className="min-h-screen bg-[#0a0e1a] text-white p-4 md:p-6">
       <div className="max-w-4xl mx-auto">
+        {/* 토스트 알림 */}
+        {toast && (
+          <div className={`fixed top-4 right-4 z-50 px-4 py-3 rounded-lg shadow-lg transition-opacity ${
+            toast.type === 'success' ? 'bg-green-600' :
+            toast.type === 'error' ? 'bg-red-600' :
+            'bg-blue-600'
+          }`}>
+            <p className="text-sm font-medium text-white">{toast.message}</p>
+          </div>
+        )}
+
+        {/* 긴급 정지 확인 모달 */}
+        {showEmergencyConfirm && (
+          <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+            <div className="bg-gray-900 rounded-xl p-6 max-w-md w-full border border-red-600/40">
+              <div className="flex items-start gap-3 mb-4">
+                <AlertTriangle className="w-6 h-6 text-red-400 flex-shrink-0 mt-1" />
+                <div>
+                  <h3 className="text-lg font-bold text-red-400 mb-2">긴급 정지 확인</h3>
+                  <p className="text-sm text-gray-300">
+                    모든 포지션을 즉시 청산하고 자동매매를 중지합니다.
+                    시장 급변 시에만 사용하세요.
+                  </p>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  onClick={() => setShowEmergencyConfirm(false)}
+                  className="px-4 py-2.5 bg-gray-700 hover:bg-gray-600 rounded-lg font-semibold"
+                >
+                  취소
+                </button>
+                <button
+                  onClick={executeEmergencyStop}
+                  disabled={loading}
+                  className="px-4 py-2.5 bg-red-600 hover:bg-red-700 disabled:opacity-40 rounded-lg font-semibold"
+                >
+                  {loading ? '처리 중...' : '정지 실행'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         <div className="mb-6">
           <div className="flex items-center gap-2 mb-1">
             <h1 className="text-2xl font-bold text-cyan-400 flex items-center gap-2">
@@ -115,7 +192,7 @@ export default function AutopilotPage() {
             ? 'bg-green-900/20 border-green-700/40'
             : 'bg-gray-900 border-gray-800'
         }`}>
-          <div className="flex justify-between items-center">
+          <div className="flex justify-between items-center mb-4">
             <div>
               <div className="flex items-center gap-2 mb-1">
                 <Power className={`w-5 h-5 ${config.is_active ? 'text-green-400' : 'text-gray-500'}`} />
@@ -141,6 +218,39 @@ export default function AutopilotPage() {
               {config.is_active ? '일시 정지' : '활성화'}
             </button>
           </div>
+
+          {/* 상태 정보 */}
+          {config.is_active && status && (
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-3 pt-4 border-t border-gray-700">
+              <div className="bg-gray-800/50 rounded-lg p-3">
+                <div className="flex items-center gap-2 mb-1">
+                  <Clock className="w-4 h-4 text-cyan-400" />
+                  <p className="text-xs text-gray-400">마지막 체크</p>
+                </div>
+                <p className="text-sm font-semibold text-white">
+                  {formatTime(status.last_check_at)}
+                </p>
+              </div>
+              <div className="bg-gray-800/50 rounded-lg p-3">
+                <div className="flex items-center gap-2 mb-1">
+                  <Activity className="w-4 h-4 text-cyan-400" />
+                  <p className="text-xs text-gray-400">오늘 신호</p>
+                </div>
+                <p className="text-sm font-semibold text-white">
+                  {status.signals_today}개
+                </p>
+              </div>
+              <div className="bg-gray-800/50 rounded-lg p-3">
+                <div className="flex items-center gap-2 mb-1">
+                  <Zap className="w-4 h-4 text-cyan-400" />
+                  <p className="text-xs text-gray-400">누적 신호</p>
+                </div>
+                <p className="text-sm font-semibold text-white">
+                  {status.total_signals}개
+                </p>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* 설정 패널 */}
@@ -221,12 +331,12 @@ export default function AutopilotPage() {
             </div>
           </div>
           <button
-            onClick={emergencyStop}
+            onClick={() => setShowEmergencyConfirm(true)}
             disabled={loading}
             className="w-full bg-red-600 hover:bg-red-700 disabled:opacity-40 rounded-lg py-3 font-bold flex items-center justify-center gap-2"
           >
             <Zap className="w-5 h-5" />
-            {loading ? '처리 중...' : '긴급 정지 실행'}
+            긴급 정지 실행
           </button>
         </div>
 

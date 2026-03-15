@@ -22,7 +22,26 @@ export async function GET(req: NextRequest) {
 
       const config = data ?? DEFAULT_CONFIG
 
-      return NextResponse.json({ success: true, config })
+      // 상태 정보 조회
+      const { data: status } = await supabase
+        .from('autopilot_status')
+        .select('*')
+        .single()
+
+      return NextResponse.json({
+        success: true,
+        config,
+        status: status ?? null
+      })
+    }
+
+    if (action === 'status') {
+      const { data: status } = await supabase
+        .from('autopilot_status')
+        .select('*')
+        .single()
+
+      return NextResponse.json({ success: true, status })
     }
 
     return NextResponse.json({ error: 'unknown action' }, { status: 400 })
