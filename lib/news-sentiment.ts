@@ -171,9 +171,11 @@ async function analyzeSentimentWithGemini(
     return analyzeKeywordSentiment(text);
   }
 
+  console.log(`🤖 Gemini API 호출 (키: ${apiKey.substring(0, 10)}...)`);
+
   try {
     const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -192,11 +194,16 @@ async function analyzeSentimentWithGemini(
     );
 
     if (!response.ok) {
-      return { label: "neutral", score: 0 };
+      const errorText = await response.text();
+      console.error(`❌ Gemini API error (${response.status}):`, errorText);
+      console.warn("⚠️ Gemini API 실패. 키워드 기반 감성 분석으로 전환");
+      return analyzeKeywordSentiment(text);
     }
 
     const data = await response.json();
     const result = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim().toLowerCase() || "neutral";
+
+    console.log(`✅ Gemini 응답: "${result}"`);
 
     let label: "positive" | "negative" | "neutral" = "neutral";
     let score = 0;
@@ -211,6 +218,8 @@ async function analyzeSentimentWithGemini(
       label = "neutral";
       score = 0;
     }
+
+    console.log(`📊 감성 분석 결과: ${label} (${score})`);
 
     return { label, score };
   } catch (error) {
