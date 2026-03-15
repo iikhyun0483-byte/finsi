@@ -13,31 +13,68 @@ export interface EarningsEvent {
   estimateEps:  number | null
   actualEps:    number | null
   surprisePct:  number | null
-  signal:       'BEAT' | 'MISS' | 'IN_LINE' | 'UPCOMING' | null
+  signal:       'BUY' | 'SELL' | 'HOLD' | 'UPCOMING' | null
 }
+
+const FINNHUB_API_KEY = process.env.FINNHUB_API_KEY
 
 // Finnhub 실적 발표 캘린더
 export async function fetchEarningsCalendar(
   from: string,  // YYYY-MM-DD
   to:   string
 ): Promise<EarningsEvent[]> {
-  const res  = await fetch(
-    `https://finnhub.io/api/v1/calendar/earnings?from=${from}&to=${to}&token=${process.env.FINNHUB_API_KEY}`
-  )
-  const data = await res.json()
-  return (data.earningsCalendar ?? []).slice(0, 50).map((e: Record<string, unknown>) => ({
-    symbol:       e.symbol as string,
-    corpName:     e.company as string ?? e.symbol,
-    earningsDate: e.date as string,
-    estimateEps:  e.epsEstimate ? Number(e.epsEstimate) : null,
-    actualEps:    e.epsActual   ? Number(e.epsActual)   : null,
-    surprisePct:  e.surprisePercent ? Number(e.surprisePercent) : null,
-    signal:       e.epsActual
-      ? (e.surprisePercent as number) > 5  ? 'BEAT'
-      : (e.surprisePercent as number) < -5 ? 'MISS'
-      : 'IN_LINE'
-      : 'UPCOMING',
-  }))
+  // API 키 검증
+  if (!FINNHUB_API_KEY || FINNHUB_API_KEY === 'your_api_key') {
+    console.warn('⚠️ FINNHUB_API_KEY not configured')
+    throw new Error('FINNHUB_API_KEY가 설정되지 않았습니다. .env.local에 API 키를 추가하세요.')
+  }
+
+  try {
+    const res = await fetch(
+      `https://finnhub.io/api/v1/calendar/earnings?from=${from}&to=${to}&token=${FINNHUB_API_KEY}`,
+      { next: { revalidate: 3600 } }
+    )
+
+    if (!res.ok) {
+      console.warn(`⚠️ Finnhub API error: ${res.status}`)
+      if (res.status === 429) {
+        throw new Error('Finnhub API Rate Limit 초과 (60 calls/min)')
+      }
+      if (res.status === 401 || res.status === 403) {
+        throw new Error('Finnhub API 키가 유효하지 않습니다')
+      }
+      throw new Error(`Finnhub API 오류 (${res.status})`)
+    }
+
+    const data = await res.json()
+    return (data.earningsCalendar ?? []).slice(0, 50).map((e: Record<string, unknown>) => {
+      const surprisePct = e.surprisePercent ? Number(e.surprisePercent) : null
+
+      // 신호 생성 (BUY/SELL/HOLD로 통일)
+      let signal: 'BUY' | 'SELL' | 'HOLD' | 'UPCOMING' = 'UPCOMING'
+      if (e.epsActual && surprisePct !== null) {
+        if (surprisePct > 5) signal = 'BUY'
+        else if (surprisePct < -5) signal = 'SELL'
+        else signal = 'HOLD'
+      }
+
+      return {
+        symbol:       e.symbol as string,
+        corpName:     e.company as string ?? e.symbol,
+        earningsDate: e.date as string,
+        estimateEps:  e.epsEstimate ? Number(e.epsEstimate) : null,
+        actualEps:    e.epsActual   ? Number(e.epsActual)   : null,
+        surprisePct,
+        signal,
+      }
+    })
+  } catch (error) {
+    if (error instanceof Error && error.message.includes('FINNHUB_API_KEY')) {
+      throw error
+    }
+    console.error('⚠️ Failed to fetch earnings calendar:', error)
+    throw new Error('실적 캘린더 조회 실패')
+  }
 }
 
 // EPS 서프라이즈 → 매매 신호
@@ -73,10 +110,6 @@ export async function syncEarnings(): Promise<EarningsEvent[]> {
   const events   = await fetchEarningsCalendar(today, nextWeek)
 
   for (const e of events) {
-    const signal = e.surprisePct !== null
-      ? calcEarningsSignal(e.surprisePct).action
-      : null
-
     await supabase.from('earnings_calendar').upsert({
       symbol:          e.symbol,
       corp_name:       e.corpName,
@@ -84,7 +117,8 @@ export async function syncEarnings(): Promise<EarningsEvent[]> {
       estimate_eps:    e.estimateEps,
       actual_eps:      e.actualEps,
       surprise_pct:    e.surprisePct,
-      signal:          signal ?? e.signal,
+      signal:          e.signal,
+      updated_at:      new Date().toISOString(),
     }, { onConflict: 'symbol,earnings_date' })
   }
   return events

@@ -30,12 +30,9 @@ function SignalBadge({ signal }: { signal: string | null }) {
     <span className="text-gray-500 text-xs">발표 예정</span>
   )
   const meta: Record<string, { color: string; label: string }> = {
-    BUY:     { color: 'text-green-400', label: '매수' },
-    SELL:    { color: 'text-red-400',   label: '매도' },
-    HOLD:    { color: 'text-gray-400',  label: '중립' },
-    BEAT:    { color: 'text-green-400', label: 'BEAT' },
-    MISS:    { color: 'text-red-400',   label: 'MISS' },
-    IN_LINE: { color: 'text-gray-400',  label: '부합' },
+    BUY:  { color: 'text-green-400', label: '매수' },
+    SELL: { color: 'text-red-400',   label: '매도' },
+    HOLD: { color: 'text-gray-400',  label: '중립' },
   }
   const m = meta[signal] ?? { color: 'text-gray-400', label: signal }
   return <span className={`text-xs font-bold ${m.color}`}>{m.label}</span>
@@ -47,22 +44,50 @@ export default function EarningsPage() {
   const [tab,      setTab]      = useState<'upcoming' | 'recent'>('upcoming')
   const [syncing,  setSyncing]  = useState(false)
   const [loading,  setLoading]  = useState(true)
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' | 'warning' } | null>(null)
+
+  const showToast = useCallback((message: string, type: 'success' | 'error' | 'info' | 'warning' = 'info') => {
+    setToast({ message, type })
+    setTimeout(() => setToast(null), 5000)
+  }, [])
 
   const load = useCallback(async () => {
-    const [u, r] = await Promise.all([
-      fetch('/api/earnings?action=list').then(res => res.json()),
-      fetch('/api/earnings?action=recent').then(res => res.json()),
-    ])
-    setUpcoming(u.data ?? [])
-    setRecent(r.data ?? [])
-    setLoading(false)
-  }, [])
+    try {
+      const [u, r] = await Promise.all([
+        fetch('/api/earnings?action=list').then(res => res.json()),
+        fetch('/api/earnings?action=recent').then(res => res.json()),
+      ])
+      setUpcoming(u.data ?? [])
+      setRecent(r.data ?? [])
+    } catch (e) {
+      console.error('❌ Load error:', e)
+      showToast(`데이터 로드 실패: ${(e as Error).message}`, 'error')
+    } finally {
+      setLoading(false)
+    }
+  }, [showToast])
 
   const sync = async () => {
     setSyncing(true)
-    await fetch('/api/earnings?action=sync')
-    await load()
-    setSyncing(false)
+    try {
+      const res = await fetch('/api/earnings?action=sync')
+      const json = await res.json()
+
+      if (!res.ok) {
+        console.error('❌ Sync failed:', json)
+        showToast(`동기화 실패: ${json.error || '알 수 없는 오류'}`, 'error')
+        return
+      }
+
+      console.log('✅ Sync completed:', json)
+      showToast(`동기화 완료 (${json.synced || 0}개 종목)`, 'success')
+      await load()
+    } catch (e) {
+      console.error('❌ Sync error:', e)
+      showToast(`동기화 오류: ${e instanceof Error ? e.message : '네트워크 오류'}`, 'error')
+    } finally {
+      setSyncing(false)
+    }
   }
 
   useEffect(() => { load() }, [load])
@@ -73,6 +98,18 @@ export default function EarningsPage() {
   return (
     <div className="min-h-screen bg-[#0a0e1a] text-white p-4 md:p-6">
       <div className="max-w-4xl mx-auto">
+        {/* 토스트 알림 */}
+        {toast && (
+          <div className={`fixed top-4 right-4 z-50 px-4 py-3 rounded-lg shadow-lg transition-opacity ${
+            toast.type === 'success' ? 'bg-green-600' :
+            toast.type === 'error' ? 'bg-red-600' :
+            toast.type === 'warning' ? 'bg-yellow-600' :
+            'bg-blue-600'
+          }`}>
+            <p className="text-sm font-medium text-white">{toast.message}</p>
+          </div>
+        )}
+
         <div className="flex justify-between items-center mb-6">
           <div>
             <h1 className="text-2xl font-bold text-orange-400">실적 발표 캘린더</h1>
