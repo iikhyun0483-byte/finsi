@@ -380,8 +380,10 @@ export async function generateSignalEnhanced(
     atr
   );
 
-  // 고위험 플래그
-  const highRisk = macroIndicators.vix > 30 || macroIndicators.fearGreed < 30;
+  // 고위험 플래그 (자산별 차등 적용)
+  const highRisk = assetType === "crypto"
+    ? true  // 암호화폐는 무조건 HIGH RISK
+    : macroIndicators.vix > 40;  // 주식/ETF/채권/리츠는 VIX 40 초과 시만
 
   // 최종 액션 결정
   let action = "관망";

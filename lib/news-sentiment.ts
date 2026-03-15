@@ -127,14 +127,48 @@ export async function getNewsSentiment(symbol: string): Promise<NewsSentiment> {
 }
 
 /**
+ * 키워드 기반 감성 분석 (Gemini API 폴백)
+ */
+function analyzeKeywordSentiment(text: string): { label: "positive" | "negative" | "neutral"; score: number } {
+  const lowerText = text.toLowerCase();
+
+  // 긍정 키워드
+  const positiveKeywords = ["surge", "rally", "gain", "bullish", "beat", "record", "soar", "jump", "rise", "up", "high", "strong"];
+  // 부정 키워드
+  const negativeKeywords = ["crash", "drop", "fall", "bearish", "miss", "recession", "plunge", "decline", "down", "low", "weak", "loss"];
+
+  let positiveCount = 0;
+  let negativeCount = 0;
+
+  positiveKeywords.forEach(keyword => {
+    if (lowerText.includes(keyword)) positiveCount++;
+  });
+
+  negativeKeywords.forEach(keyword => {
+    if (lowerText.includes(keyword)) negativeCount++;
+  });
+
+  // 점수 계산
+  if (positiveCount > negativeCount) {
+    return { label: "positive", score: 0.5 };
+  } else if (negativeCount > positiveCount) {
+    return { label: "negative", score: -0.5 };
+  } else {
+    return { label: "neutral", score: 0 };
+  }
+}
+
+/**
  * Gemini로 감성 분석
  */
 async function analyzeSentimentWithGemini(
   text: string,
   apiKey: string | undefined
 ): Promise<{ label: "positive" | "negative" | "neutral"; score: number }> {
+  // Gemini API 키 없으면 키워드 기반 폴백
   if (!apiKey || apiKey === "your_gemini_api_key") {
-    return { label: "neutral", score: 0 };
+    console.warn("⚠️ Gemini API 키 없음. 키워드 기반 감성 분석 사용");
+    return analyzeKeywordSentiment(text);
   }
 
   try {
@@ -180,7 +214,8 @@ async function analyzeSentimentWithGemini(
 
     return { label, score };
   } catch (error) {
-    return { label: "neutral", score: 0 };
+    console.warn("⚠️ Gemini API 호출 실패. 키워드 기반 감성 분석으로 전환");
+    return analyzeKeywordSentiment(text);
   }
 }
 
