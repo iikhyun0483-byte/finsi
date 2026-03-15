@@ -11,10 +11,10 @@ const FRED_API_KEY = process.env.FRED_API_KEY!
 
 // FRED API 없을 때 Fallback 기본값
 const MACRO_DEFAULTS: Record<string, number> = {
-  FEDFUNDS: 4.5,    // 연방기금금리 (2024 Q4 기준)
-  UNRATE: 3.9,      // 실업률
-  CPIAUCSL: 3.2,    // CPI (전년 대비 %)
-  T10Y2Y: 0.3,      // 10년-2년 국채 금리차
+  FEDFUNDS: 4.5,      // 연방기금금리 (2024 Q4 기준)
+  UNRATE: 3.9,        // 실업률
+  CPIAUCSL_PCH: 3.2,  // CPI YoY (전년 대비 %)
+  T10Y2Y: 0.3,        // 10년-2년 국채 금리차
 }
 
 interface MacroSignal {
@@ -152,11 +152,11 @@ function interpretMacro(indicator: string, value: number): MacroSignal {
         signal: value >= 5 ? 'RISK_OFF' : value <= 3.5 ? 'NEUTRAL' : 'NEUTRAL',
         impact: `실업률 ${value.toFixed(1)}% — ${value >= 5 ? '경기 침체 신호' : '고용 안정'}`,
       }
-    case 'CPIAUCSL':
+    case 'CPIAUCSL_PCH':
       return {
         indicator, value,
         signal: value >= 4 ? 'RISK_OFF' : 'NEUTRAL',
-        impact: `CPI ${value.toFixed(1)}% — ${value >= 4 ? '고인플레이션. 금리인상 압력' : '인플레이션 안정'}`,
+        impact: `CPI YoY ${value.toFixed(1)}% — ${value >= 4 ? '고인플레이션. 금리인상 압력' : '인플레이션 안정'}`,
       }
     default:
       return { indicator, value, signal: 'NEUTRAL', impact: '' }
@@ -186,8 +186,8 @@ export async function syncMacroIndicators(): Promise<SyncResult> {
     await saveToDb('DXY', dxyValue, signal, 'Yahoo Finance')
   }
 
-  // FRED 지표들
-  const fredIndicators = ['FEDFUNDS', 'UNRATE', 'CPIAUCSL', 'T10Y2Y']
+  // FRED 지표들 (CPIAUCSL_PCH는 YoY 변화율을 직접 반환)
+  const fredIndicators = ['FEDFUNDS', 'UNRATE', 'CPIAUCSL_PCH', 'T10Y2Y']
   for (const name of fredIndicators) {
     const { value, usedFallback } = await fetchFRED(name)
 
@@ -304,8 +304,8 @@ export async function getMacroRiskScore(): Promise<{
     signals.push(s)
     riskScore += s.signal === 'RISK_OFF' ? 15 : 0
   }
-  if (latest.CPIAUCSL) {
-    const s = interpretMacro('CPIAUCSL', latest.CPIAUCSL)
+  if (latest.CPIAUCSL_PCH) {
+    const s = interpretMacro('CPIAUCSL_PCH', latest.CPIAUCSL_PCH)
     signals.push(s)
     riskScore += s.signal === 'RISK_OFF' ? 10 : 0
   }

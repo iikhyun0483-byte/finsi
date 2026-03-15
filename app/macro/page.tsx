@@ -22,12 +22,12 @@ const REGIME_META = {
 }
 
 const INDICATOR_LABEL: Record<string, string> = {
-  VIX:      '공포지수 (VIX)',
-  DXY:      '달러 인덱스 (DXY)',
-  FEDFUNDS: '미국 기준금리',
-  UNRATE:   '실업률',
-  CPIAUCSL: 'CPI (소비자물가)',
-  T10Y2Y:   '장단기 금리차 (경기침체 선행)',
+  VIX:          '공포지수 (VIX)',
+  DXY:          '달러 인덱스 (DXY)',
+  FEDFUNDS:     '미국 기준금리',
+  UNRATE:       '실업률',
+  CPIAUCSL_PCH: 'CPI YoY (소비자물가 전년비)',
+  T10Y2Y:       '장단기 금리차 (경기침체 선행)',
 }
 
 const SIGNAL_COLOR: Record<string, string> = {
