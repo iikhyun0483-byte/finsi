@@ -86,13 +86,19 @@ export default function DisclosurePage() {
       }
       const result: SyncResult = await res.json()
 
+      console.log('[Disclosure Page] Sync result:', result)
+
       if (result.error) {
         // 환경변수 누락 등의 에러
         if (result.missing && result.missing.length > 0) {
           showToast(`환경변수 누락: ${result.missing.join(', ')}. .env.local 파일을 확인하세요.`, 'error')
+        } else if ((result as any).sql_file) {
+          // 테이블 미생성 에러
+          showToast(`${result.error} (${(result as any).hint})`, 'error')
         } else {
           showToast(`동기화 실패: ${result.error}`, 'error')
         }
+        console.error('[Disclosure Page] Sync error:', result)
         return
       }
 

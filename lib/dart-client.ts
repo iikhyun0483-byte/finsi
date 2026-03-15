@@ -40,22 +40,34 @@ export async function fetchRecentDisclosures(
   }
 
   const url = `${DART_BASE}/list.json?crtfc_key=${DART_API_KEY}&bgn_de=${startDate}&end_de=${endDate}&page_count=100`
+
+  console.log(`[DART Client] Fetching from: ${DART_BASE}/list.json`)
+  console.log(`[DART Client] Date range: ${startDate} ~ ${endDate}`)
+
   const res  = await fetch(url, { next: { revalidate: 300 } })
 
   if (!res.ok) {
+    console.error(`[DART Client] HTTP error: ${res.status} ${res.statusText}`)
     throw new Error(`DART API 오류: ${res.status} ${res.statusText}`)
   }
 
   const data = await res.json()
 
+  console.log(`[DART Client] API response status: ${data.status}`)
+  console.log(`[DART Client] API response message: ${data.message || 'none'}`)
+
   if (data.status !== '000') {
     const errorMsg = data.message || `DART API 상태 코드: ${data.status}`
+    console.error(`[DART Client] API error: ${errorMsg}`)
     throw new Error(errorMsg)
   }
 
   if (!data.list || data.list.length === 0) {
+    console.log('[DART Client] No disclosures found')
     return []
   }
+
+  console.log(`[DART Client] Found ${data.list.length} disclosures`)
 
   return data.list.map((d: Record<string, string>) => ({
     rceptNo:   d.rcept_no,
