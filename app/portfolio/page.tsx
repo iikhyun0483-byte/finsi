@@ -395,9 +395,9 @@ export default function PortfolioPage() {
             ) : portfolio.length === 0 ? (
               <div className="text-center py-12 text-gray-500">
                 <div className="text-4xl mb-4">📭</div>
-                <div>보유 중인 종목이 없습니다</div>
-                <div className="text-sm mt-2 text-gray-600">
-                  💡 localStorage를 사용하여 데이터가 저장됩니다
+                <div className="font-semibold text-white mb-2">보유 중인 종목이 없습니다</div>
+                <div className="text-sm text-gray-400">
+                  오른쪽 상단 "➕ 종목 추가" 버튼을 눌러 포트폴리오를 시작하세요
                 </div>
               </div>
             ) : (
