@@ -1,7 +1,9 @@
 /**
- * 재무제표 데이터 (Financial Modeling Prep API)
- * https://financialmodelingprep.com
+ * 재무제표 데이터 (Alpha Vantage API)
+ * Supabase 캐시 우선 조회 (7일 유효)
  */
+
+import { supabase } from "./supabase";
 
 export interface FundamentalData {
   symbol: string;
@@ -30,7 +32,7 @@ const cache = new Map<string, { data: FundamentalData; expiry: number }>();
 const CACHE_DURATION = 24 * 60 * 60 * 1000; // 24시간
 
 /**
- * FMP API로 재무 데이터 조회
+ * 재무 데이터 조회 (Supabase 캐시 → Alpha Vantage API)
  */
 export async function getFundamentals(symbol: string): Promise<FundamentalData> {
   // ETF 체크 (펀더멘털 분석 불가)
@@ -50,12 +52,43 @@ export async function getFundamentals(symbol: string): Promise<FundamentalData> 
     };
   }
 
-  const cached = cache.get(symbol);
-  if (cached && Date.now() < cached.expiry) {
-    console.log(`💾 ${symbol} 재무 데이터 캐시 사용`);
-    return cached.data;
+  // 1. Supabase 캐시 확인 (7일 유효)
+  try {
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+    const { data: cachedData, error } = await supabase
+      .from('fundamentals_cache')
+      .select('*')
+      .eq('symbol', symbol.toUpperCase())
+      .gte('updated_at', sevenDaysAgo)
+      .single();
+
+    if (!error && cachedData) {
+      console.log(`💾 ${symbol} Supabase 캐시 사용 (${new Date(cachedData.updated_at).toLocaleDateString()})`);
+      return {
+        symbol,
+        per: cachedData.per,
+        pbr: cachedData.pbr,
+        roe: cachedData.roe,
+        debtToEquity: cachedData.debt_to_equity,
+        revenueGrowth: cachedData.revenue_growth,
+        grossMargin: cachedData.gross_margin,
+        operatingMargin: cachedData.operating_margin,
+        isETF: cachedData.is_etf,
+        etfMessage: cachedData.etf_message,
+      };
+    }
+  } catch (cacheError) {
+    console.warn(`⚠️ Supabase 캐시 조회 실패:`, cacheError);
   }
 
+  // 2. 인메모리 캐시 확인 (24시간)
+  const memCached = cache.get(symbol);
+  if (memCached && Date.now() < memCached.expiry) {
+    console.log(`💾 ${symbol} 메모리 캐시 사용`);
+    return memCached.data;
+  }
+
+  // 3. Alpha Vantage API 호출
   const apiKey = process.env.ALPHA_VANTAGE_API_KEY;
 
   if (!apiKey) {
@@ -130,11 +163,35 @@ export async function getFundamentals(symbol: string): Promise<FundamentalData> 
       operatingMargin: overview.OperatingMarginTTM ? parseFloat(overview.OperatingMarginTTM) * 100 : null, // 0.354 → 35.4%
     };
 
-    // 캐시 저장
+    // 인메모리 캐시 저장 (24시간)
     cache.set(symbol, {
       data,
       expiry: Date.now() + CACHE_DURATION,
     });
+
+    // Supabase 캐시 저장 (7일 유효)
+    try {
+      await supabase
+        .from('fundamentals_cache')
+        .upsert({
+          symbol: symbol.toUpperCase(),
+          per: data.per,
+          pbr: data.pbr,
+          roe: data.roe,
+          debt_to_equity: data.debtToEquity,
+          revenue_growth: data.revenueGrowth,
+          gross_margin: data.grossMargin,
+          operating_margin: data.operatingMargin,
+          is_etf: false,
+          etf_message: null,
+          updated_at: new Date().toISOString(),
+        }, {
+          onConflict: 'symbol',
+        });
+      console.log(`💾 ${symbol} Supabase 캐시 저장 완료`);
+    } catch (saveError) {
+      console.warn(`⚠️ ${symbol} Supabase 캐시 저장 실패:`, saveError);
+    }
 
     console.log(`✅ ${symbol} 재무: PER=${data.per?.toFixed(1)}, PBR=${data.pbr?.toFixed(1)}, ROE=${data.roe?.toFixed(1)}%`);
 

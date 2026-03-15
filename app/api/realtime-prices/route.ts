@@ -40,7 +40,7 @@ export async function GET(request: NextRequest) {
         const cryptoData = await getCryptoHistorical(coinId, 365);
         historicalPrices = cryptoData.map(d => ({
           close: d.price,
-          volume: 0,
+          volume: d.volume ?? 0,
           date: d.date,
         }));
       } else {

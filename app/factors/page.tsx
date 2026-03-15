@@ -6,6 +6,12 @@ const DEFAULT_WEIGHTS: FactorWeights = {
   momentum: 0.25, value: 0.20, quality: 0.25, lowVol: 0.15, volume: 0.15,
 }
 
+const WEIGHT_PRESETS: Record<string, FactorWeights> = {
+  aggressive: { momentum: 0.40, value: 0.10, quality: 0.20, lowVol: 0.05, volume: 0.25 },
+  balanced:   { momentum: 0.25, value: 0.20, quality: 0.25, lowVol: 0.15, volume: 0.15 },
+  defensive:  { momentum: 0.10, value: 0.30, quality: 0.30, lowVol: 0.25, volume: 0.05 },
+}
+
 const FACTOR_META = {
   momentum: { label: '모멘텀',   ref: 'Jegadeesh & Titman 1993', desc: '12개월-1개월 수익률 (단기반전 제거)' },
   value:    { label: '밸류',     ref: 'Fama & French 1992',      desc: 'PBR/PER/EV·EBITDA 낮을수록' },
@@ -36,33 +42,56 @@ export default function FactorsPage() {
     setDataWarnings([])
     setLoading(true)
     try {
-      const universeData = await Promise.all(
-        DEFAULT_UNIVERSE.map(async symbol => {
-          const [pr, fr] = await Promise.allSettled([
-            fetch(`/api/realtime-prices?symbol=${encodeURIComponent(symbol)}`).then(r => r.json()),
-            fetch(`/api/fundamentals?symbol=${encodeURIComponent(symbol)}`).then(r => r.json()),
-          ])
-          const priceRaw = pr.status === 'fulfilled' ? pr.value : {}
-          const fundRaw  = fr.status === 'fulfilled' ? fr.value : {}
-          return {
-            symbol,
-            // 다양한 응답 구조 대응
-            prices:       priceRaw.prices ?? priceRaw.history ?? priceRaw.data ?? [],
-            fundamentals: fundRaw,
-          }
-        })
-      )
+      // 5개씩 순차 배치 처리 (Rate Limit 방지)
+      const BATCH_SIZE = 5
+      const universeData = []
 
-      // 데이터 경고 수집
-      const warnings = universeData
+      for (let i = 0; i < DEFAULT_UNIVERSE.length; i += BATCH_SIZE) {
+        const batch = DEFAULT_UNIVERSE.slice(i, i + BATCH_SIZE)
+        const batchResults = await Promise.all(
+          batch.map(async symbol => {
+            const [pr, fr] = await Promise.allSettled([
+              fetch(`/api/realtime-prices?symbol=${encodeURIComponent(symbol)}`).then(r => r.json()),
+              fetch(`/api/fundamentals?symbol=${encodeURIComponent(symbol)}`).then(r => r.json()),
+            ])
+            const priceRaw = pr.status === 'fulfilled' ? pr.value : {}
+            const fundRaw  = fr.status === 'fulfilled' ? fr.value : {}
+            return {
+              symbol,
+              prices:       priceRaw.prices ?? priceRaw.history ?? priceRaw.data ?? [],
+              fundamentals: fundRaw,
+            }
+          })
+        )
+        universeData.push(...batchResults)
+
+        // 배치 간 100ms 대기 (Rate Limit 여유)
+        if (i + BATCH_SIZE < DEFAULT_UNIVERSE.length) {
+          await new Promise(resolve => setTimeout(resolve, 100))
+        }
+      }
+
+      // 데이터 부족 종목 필터링 + 경고 수집
+      const invalidSymbols = universeData
         .filter(u => !u.prices || u.prices.length < 20)
-        .map(u => `${u.symbol}: 가격 데이터 부족`)
-      setDataWarnings(warnings)
+        .map(u => u.symbol)
+
+      if (invalidSymbols.length > 0) {
+        setDataWarnings(invalidSymbols.map(s => `${s}: 가격 데이터 부족 (스크리닝 제외)`))
+      }
+
+      // 유효한 데이터만 스크리닝
+      const validUniverse = universeData.filter(u => u.prices && u.prices.length >= 20)
+
+      if (validUniverse.length === 0) {
+        setError('유효한 데이터가 없습니다. 모든 종목의 가격 데이터가 부족합니다.')
+        return
+      }
 
       const res = await fetch('/api/factor-score', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ weights, universeData }),
+        body: JSON.stringify({ weights, universeData: validUniverse }),
       })
       const data = await res.json()
       if (data.error) { setError(data.error); return }
@@ -98,6 +127,29 @@ export default function FactorsPage() {
                   합계 {(totalW * 100).toFixed(0)}% {weightOk ? '✅' : '❌'}
                 </span>
               </div>
+
+              {/* 프리셋 버튼 */}
+              <div className="flex gap-2 mb-4">
+                <button
+                  onClick={() => setWeights(WEIGHT_PRESETS.aggressive)}
+                  className="flex-1 px-2 py-1.5 bg-red-900/30 hover:bg-red-900/50 border border-red-700/40 rounded text-xs text-red-400 transition-colors"
+                >
+                  공격적
+                </button>
+                <button
+                  onClick={() => setWeights(WEIGHT_PRESETS.balanced)}
+                  className="flex-1 px-2 py-1.5 bg-blue-900/30 hover:bg-blue-900/50 border border-blue-700/40 rounded text-xs text-blue-400 transition-colors"
+                >
+                  균형
+                </button>
+                <button
+                  onClick={() => setWeights(WEIGHT_PRESETS.defensive)}
+                  className="flex-1 px-2 py-1.5 bg-green-900/30 hover:bg-green-900/50 border border-green-700/40 rounded text-xs text-green-400 transition-colors"
+                >
+                  방어적
+                </button>
+              </div>
+
               {(Object.keys(weights) as (keyof FactorWeights)[]).map(k => (
                 <div key={k} className="mb-3">
                   <div className="flex justify-between mb-0.5">
