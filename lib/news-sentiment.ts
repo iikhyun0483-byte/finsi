@@ -74,25 +74,22 @@ export async function getNewsSentiment(symbol: string): Promise<NewsSentiment> {
 
     console.log(`✅ Finnhub에서 ${data.length}개 뉴스 수집`);
 
-    // 2. Gemini로 감성 분석
-    const analyzedArticles: NewsArticle[] = [];
+    // 2. Gemini로 감성 분석 (배치 처리 - 1회 호출)
+    const topArticles = data.slice(0, 5);
+    const overallSentiment = await analyzeBatchSentimentWithGemini(
+      topArticles.map(a => a.headline + " " + (a.summary || "")),
+      geminiApiKey
+    );
 
-    for (const article of data.slice(0, 5)) {
-      const sentiment = await analyzeSentimentWithGemini(
-        article.headline + " " + (article.summary || ""),
-        geminiApiKey
-      );
-
-      analyzedArticles.push({
-        title: article.headline,
-        description: article.summary || "",
-        url: article.url,
-        publishedAt: new Date(article.datetime * 1000).toISOString(), // Unix timestamp to ISO
-        source: article.source || "Unknown",
-        sentiment: sentiment.label,
-        sentimentScore: sentiment.score,
-      });
-    }
+    const analyzedArticles: NewsArticle[] = topArticles.map(article => ({
+      title: article.headline,
+      description: article.summary || "",
+      url: article.url,
+      publishedAt: new Date(article.datetime * 1000).toISOString(), // Unix timestamp to ISO
+      source: article.source || "Unknown",
+      sentiment: overallSentiment.label,
+      sentimentScore: overallSentiment.score,
+    }));
 
     // 3. 전체 감성 점수 계산
     const avgSentiment = analyzedArticles.reduce((sum, a) => sum + a.sentimentScore, 0) / analyzedArticles.length;
@@ -159,7 +156,81 @@ function analyzeKeywordSentiment(text: string): { label: "positive" | "negative"
 }
 
 /**
- * Gemini로 감성 분석
+ * Gemini로 배치 감성 분석 (여러 뉴스를 한 번에)
+ */
+async function analyzeBatchSentimentWithGemini(
+  texts: string[],
+  apiKey: string | undefined
+): Promise<{ label: "positive" | "negative" | "neutral"; score: number }> {
+  // Gemini API 키 없으면 키워드 기반 폴백 (모든 텍스트 합쳐서)
+  if (!apiKey || apiKey === "your_gemini_api_key") {
+    console.warn("⚠️ Gemini API 키 없음. 키워드 기반 감성 분석 사용");
+    return analyzeKeywordSentiment(texts.join(" "));
+  }
+
+  // 배치 프롬프트 생성
+  const batchPrompt = `다음 ${texts.length}개 금융 뉴스 제목의 전체적인 감성을 분석해주세요. "positive", "negative", "neutral" 중 하나만 답해주세요.\n\n` +
+    texts.map((text, i) => `${i + 1}. ${text}`).join("\n");
+
+  console.log(`🤖 Gemini API 배치 호출 (${texts.length}개 뉴스, 키: ${apiKey.substring(0, 10)}...)`);
+
+  try {
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${apiKey}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{
+            parts: [{
+              text: batchPrompt
+            }]
+          }],
+          generationConfig: {
+            temperature: 0.1,
+            maxOutputTokens: 10,
+          }
+        }),
+      }
+    );
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`❌ Gemini API error (${response.status}):`, errorText);
+      console.warn("⚠️ Gemini API 실패. 키워드 기반 감성 분석으로 전환");
+      return analyzeKeywordSentiment(texts.join(" "));
+    }
+
+    const data = await response.json();
+    const result = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim().toLowerCase() || "neutral";
+
+    console.log(`✅ Gemini 배치 응답: "${result}"`);
+
+    let label: "positive" | "negative" | "neutral" = "neutral";
+    let score = 0;
+
+    if (result.includes("positive")) {
+      label = "positive";
+      score = 0.7;
+    } else if (result.includes("negative")) {
+      label = "negative";
+      score = -0.7;
+    } else {
+      label = "neutral";
+      score = 0;
+    }
+
+    console.log(`📊 배치 감성 분석 결과: ${label} (${score})`);
+
+    return { label, score };
+  } catch (error) {
+    console.warn("⚠️ Gemini API 호출 실패. 키워드 기반 감성 분석으로 전환");
+    return analyzeKeywordSentiment(texts.join(" "));
+  }
+}
+
+/**
+ * Gemini로 감성 분석 (개별 - 현재 미사용, 폴백용 유지)
  */
 async function analyzeSentimentWithGemini(
   text: string,
