@@ -131,7 +131,7 @@ export function calcSellAction(input: SellCalcInput): SellCalcResult {
   const buyAmt   = input.shares * input.entryPrice
   const sellAmt  = input.shares * input.currentPrice
   const grossP   = sellAmt - buyAmt
-  const fee      = buyAmt*c.buyFee + sellAmt*c.sellFee + buyAmt*c.slippage
+  const fee      = sellAmt*c.sellFee + buyAmt*c.slippage  // buyFee 제거 (이미 진입 시 지불됨)
   const tax      = calcTax(grossP, sellAmt, input.assetType)
   const netProfit= grossP - fee - tax
   const ret      = (input.currentPrice - input.entryPrice) / input.entryPrice * 100

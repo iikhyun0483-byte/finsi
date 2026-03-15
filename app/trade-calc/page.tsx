@@ -1,6 +1,20 @@
 'use client'
 import { useState, useMemo, useEffect } from 'react'
 import { calcBuyAction, calcSellAction, ASSET_LABELS, type AssetType } from '@/lib/trade-calculator'
+import { BarChart, Bar, Cell, XAxis, YAxis, Tooltip, ReferenceLine, ResponsiveContainer } from 'recharts'
+
+const BROKER_PRESETS = {
+  '키움증권': { buy: 0.00015, sell: 0.00015, label: '키움 (0.015%)' },
+  '삼성증권': { buy: 0.00014, sell: 0.00014, label: '삼성 (0.014%)' },
+  'NH투자증권': { buy: 0.00020, sell: 0.00020, label: 'NH (0.020%)' },
+  '업비트': { buy: 0.0005, sell: 0.0005, label: '업비트 (0.05%)' },
+} as const
+
+const RISK_PRESETS = {
+  conservative: { stopLoss: 3, tp: [3, 6, 9], label: '보수적' },
+  balanced: { stopLoss: 5, tp: [5, 10, 15], label: '균형' },
+  aggressive: { stopLoss: 10, tp: [10, 20, 30], label: '공격적' },
+} as const
 
 export default function TradeCalcPage() {
   const [mode, setMode] = useState<'BUY' | 'SELL'>('BUY')
@@ -24,6 +38,31 @@ export default function TradeCalcPage() {
   const [peakPrice, setPeakPrice] = useState(115)
   const [sellStopLossPct, setSellStopLossPct] = useState(5)
 
+  // UI 상태
+  const [warnings, setWarnings] = useState<string[]>([])
+
+  // localStorage 설정 로드
+  useEffect(() => {
+    const saved = localStorage.getItem('tradeCalcSettings')
+    if (saved) {
+      try {
+        const settings = JSON.parse(saved)
+        if (settings.assetType) setAssetType(settings.assetType)
+        if (settings.totalCapital) setTotalCapital(settings.totalCapital)
+        if (settings.stopLossPct) setStopLossPct(settings.stopLossPct)
+      } catch (err) {
+        console.warn('설정 로드 실패:', err)
+      }
+    }
+  }, [])
+
+  // localStorage 설정 저장
+  useEffect(() => {
+    localStorage.setItem('tradeCalcSettings', JSON.stringify({
+      assetType, totalCapital, stopLossPct
+    }))
+  }, [assetType, totalCapital, stopLossPct])
+
   // 신호 정확도 자동 주입
   useEffect(() => {
     if (!signalSymbol) return
@@ -36,10 +75,24 @@ export default function TradeCalcPage() {
       .then(d => {
         if (d.data) {
           setWinRate(Math.round(d.data.accuracy7d * 100))
+          setWarnings(prev => prev.filter(w => !w.includes('신호 데이터')))
+        } else {
+          setWarnings(prev => [...prev, `⚠️ ${signalSymbol} 신호 데이터 없음 - 수동 입력하세요`])
         }
       })
-      .catch(() => {})
+      .catch((err) => {
+        console.error('신호 정확도 조회 실패:', err)
+        setWarnings(prev => [...prev, `⚠️ 신호 정확도 조회 실패: ${err.message}`])
+      })
   }, [signalSymbol])
+
+  const applyRiskPreset = (key: keyof typeof RISK_PRESETS) => {
+    const preset = RISK_PRESETS[key]
+    setStopLossPct(preset.stopLoss)
+    setTp1(preset.tp[0])
+    setTp2(preset.tp[1])
+    setTp3(preset.tp[2])
+  }
 
   const buyResult = useMemo(() => {
     if (mode !== 'BUY') return null
@@ -105,6 +158,35 @@ export default function TradeCalcPage() {
           </div>
         </div>
 
+        {/* 리스크 프리셋 */}
+        {mode === 'BUY' && (
+          <div className="bg-gray-900 rounded-xl p-4 mb-6">
+            <div className="flex items-center justify-between flex-wrap gap-3">
+              <p className="text-orange-400 text-sm font-semibold">리스크/리워드 프리셋</p>
+              <div className="flex gap-2">
+                {Object.entries(RISK_PRESETS).map(([key, preset]) => (
+                  <button
+                    key={key}
+                    onClick={() => applyRiskPreset(key as keyof typeof RISK_PRESETS)}
+                    className="px-4 py-2 bg-gray-800 hover:bg-gray-700 rounded-lg text-sm font-medium transition-colors"
+                  >
+                    {preset.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* 경고 */}
+        {warnings.length > 0 && (
+          <div className="bg-yellow-900/20 border border-yellow-700/40 rounded-lg p-3 mb-6">
+            {warnings.map((w, i) => (
+              <p key={i} className="text-yellow-400 text-xs">{w}</p>
+            ))}
+          </div>
+        )}
+
         {mode === 'BUY' ? (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {/* 입력 */}
@@ -122,14 +204,20 @@ export default function TradeCalcPage() {
               <div className="space-y-3 text-xs">
                 <div>
                   <p className="text-gray-400 mb-1">총 자본</p>
-                  <input type="number" value={totalCapital}
-                    onChange={e => setTotalCapital(Number(e.target.value))}
+                  <input type="number" min={0} value={totalCapital}
+                    onChange={e => {
+                      const val = Number(e.target.value)
+                      if (val >= 0) setTotalCapital(val)
+                    }}
                     className="w-full bg-gray-800 rounded px-3 py-1.5 text-white" />
                 </div>
                 <div>
                   <p className="text-gray-400 mb-1">현재가</p>
-                  <input type="number" value={currentPrice}
-                    onChange={e => setCurrentPrice(Number(e.target.value))}
+                  <input type="number" min={0} value={currentPrice}
+                    onChange={e => {
+                      const val = Number(e.target.value)
+                      if (val >= 0) setCurrentPrice(val)
+                    }}
                     className="w-full bg-gray-800 rounded px-3 py-1.5 text-white" />
                 </div>
                 <div>
@@ -153,11 +241,20 @@ export default function TradeCalcPage() {
                 <div>
                   <p className="text-gray-400 mb-1">익절 목표 (3단계)</p>
                   <div className="flex gap-2">
-                    <input type="number" value={tp1} onChange={e => setTp1(Number(e.target.value))}
+                    <input type="number" min={0} value={tp1} onChange={e => {
+                      const val = Number(e.target.value)
+                      if (val >= 0) setTp1(val)
+                    }}
                       className="flex-1 bg-gray-800 rounded px-2 py-1 text-center text-white" />
-                    <input type="number" value={tp2} onChange={e => setTp2(Number(e.target.value))}
+                    <input type="number" min={0} value={tp2} onChange={e => {
+                      const val = Number(e.target.value)
+                      if (val >= 0) setTp2(val)
+                    }}
                       className="flex-1 bg-gray-800 rounded px-2 py-1 text-center text-white" />
-                    <input type="number" value={tp3} onChange={e => setTp3(Number(e.target.value))}
+                    <input type="number" min={0} value={tp3} onChange={e => {
+                      const val = Number(e.target.value)
+                      if (val >= 0) setTp3(val)
+                    }}
                       className="flex-1 bg-gray-800 rounded px-2 py-1 text-center text-white" />
                   </div>
                 </div>
@@ -185,7 +282,9 @@ export default function TradeCalcPage() {
                   </div>
                   <div className="flex justify-between">
                     <span className="text-gray-400">매수 수량</span>
-                    <span className="text-white font-bold">{buyResult.shares.toFixed(4)}주</span>
+                    <span className="text-white font-bold">
+                      {assetType === 'domesticStock' ? buyResult.shares.toFixed(0) : buyResult.shares.toFixed(4)}주
+                    </span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-gray-400">수수료</span>
@@ -245,6 +344,40 @@ export default function TradeCalcPage() {
                     </table>
                   </div>
                 </div>
+
+                {/* 시나리오 차트 */}
+                <div className="mt-4">
+                  <p className="text-gray-400 text-xs mb-2">시나리오 시각화</p>
+                  <div className="bg-black/30 rounded-lg p-3">
+                    <ResponsiveContainer width="100%" height={200}>
+                      <BarChart data={buyResult.scenarios}>
+                        <XAxis
+                          dataKey="label"
+                          tick={{ fill: '#9ca3af', fontSize: 10 }}
+                          angle={-45}
+                          textAnchor="end"
+                          height={60}
+                        />
+                        <YAxis tick={{ fill: '#9ca3af', fontSize: 10 }} />
+                        <Tooltip
+                          contentStyle={{ backgroundColor: '#1f2937', border: '1px solid #374151', borderRadius: '8px' }}
+                          labelStyle={{ color: '#f3f4f6' }}
+                          itemStyle={{ color: '#10b981' }}
+                        />
+                        <ReferenceLine y={0} stroke="#6b7280" strokeDasharray="3 3" />
+                        <Bar
+                          dataKey="netProfit"
+                          fill="#22c55e"
+                          radius={[4, 4, 0, 0]}
+                        >
+                          {buyResult.scenarios.map((s, index) => (
+                            <Cell key={`cell-${index}`} fill={s.netProfit >= 0 ? '#22c55e' : '#ef4444'} />
+                          ))}
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
               </div>
             )}
           </div>
@@ -257,26 +390,38 @@ export default function TradeCalcPage() {
               <div className="space-y-3 text-xs">
                 <div>
                   <p className="text-gray-400 mb-1">진입가</p>
-                  <input type="number" value={entryPrice}
-                    onChange={e => setEntryPrice(Number(e.target.value))}
+                  <input type="number" min={0} value={entryPrice}
+                    onChange={e => {
+                      const val = Number(e.target.value)
+                      if (val >= 0) setEntryPrice(val)
+                    }}
                     className="w-full bg-gray-800 rounded px-3 py-1.5 text-white" />
                 </div>
                 <div>
                   <p className="text-gray-400 mb-1">현재가</p>
-                  <input type="number" value={sellCurrentPrice}
-                    onChange={e => setSellCurrentPrice(Number(e.target.value))}
+                  <input type="number" min={0} value={sellCurrentPrice}
+                    onChange={e => {
+                      const val = Number(e.target.value)
+                      if (val >= 0) setSellCurrentPrice(val)
+                    }}
                     className="w-full bg-gray-800 rounded px-3 py-1.5 text-white" />
                 </div>
                 <div>
                   <p className="text-gray-400 mb-1">보유 수량</p>
-                  <input type="number" value={shares}
-                    onChange={e => setShares(Number(e.target.value))}
+                  <input type="number" min={0} value={shares}
+                    onChange={e => {
+                      const val = Number(e.target.value)
+                      if (val >= 0) setShares(val)
+                    }}
                     className="w-full bg-gray-800 rounded px-3 py-1.5 text-white" />
                 </div>
                 <div>
                   <p className="text-gray-400 mb-1">고점 가격</p>
-                  <input type="number" value={peakPrice}
-                    onChange={e => setPeakPrice(Number(e.target.value))}
+                  <input type="number" min={0} value={peakPrice}
+                    onChange={e => {
+                      const val = Number(e.target.value)
+                      if (val >= 0) setPeakPrice(val)
+                    }}
                     className="w-full bg-gray-800 rounded px-3 py-1.5 text-white" />
                 </div>
                 <div>
