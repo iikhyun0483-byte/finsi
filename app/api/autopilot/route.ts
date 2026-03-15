@@ -75,11 +75,18 @@ export async function POST(req: NextRequest) {
 
     // 긴급 정지 (모든 포지션 청산 + 비활성화)
     if (action === 'emergency_stop') {
-      const balance = await getBalance()
+      const balanceResult = await getBalance()
+      if (!balanceResult.success || !balanceResult.balance) {
+        return NextResponse.json({
+          success: false,
+          error: balanceResult.error ?? 'KIS 연동 후 사용 가능합니다'
+        })
+      }
+
       let closedCount = 0
 
       // 보유 종목 전체 시장가 매도
-      for (const holding of balance.holdings) {
+      for (const holding of balanceResult.balance.holdings) {
         const result = await placeSellOrder(holding.symbol, holding.quantity, 0)
         if (result.success) {
           closedCount++

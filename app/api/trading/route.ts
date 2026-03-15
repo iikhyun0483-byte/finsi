@@ -43,9 +43,12 @@ async function checkRiskGate(
 
   // 3. 단일 주문 한도 체크 (매수 시만, 현금의 50% 초과 불가)
   if (action === 'BUY') {
-    const balance = await getBalance()
+    const balanceResult = await getBalance()
+    if (!balanceResult.success || !balanceResult.balance) {
+      return { pass: false, reason: balanceResult.error ?? 'KIS 연동 후 사용 가능합니다' }
+    }
     const orderAmount = price * quantity
-    const maxOrderAmount = balance.cash * 0.5
+    const maxOrderAmount = balanceResult.balance.cash * 0.5
 
     if (orderAmount > maxOrderAmount) {
       return { pass: false, reason: `단일 주문 한도 초과 (현금의 50%: ${maxOrderAmount.toLocaleString()}원)` }
@@ -61,15 +64,21 @@ export async function GET(req: NextRequest) {
     const action = searchParams.get('action')
 
     if (action === 'balance') {
-      const balance = await getBalance()
-      return NextResponse.json({ success: true, balance })
+      const result = await getBalance()
+      if (!result.success) {
+        return NextResponse.json({ success: false, error: result.error })
+      }
+      return NextResponse.json({ success: true, balance: result.balance })
     }
 
     if (action === 'price') {
       const symbol = searchParams.get('symbol')
       if (!symbol) return NextResponse.json({ error: 'symbol required' }, { status: 400 })
-      const price = await getCurrentPrice(symbol)
-      return NextResponse.json({ success: true, price })
+      const result = await getCurrentPrice(symbol)
+      if (!result.success) {
+        return NextResponse.json({ success: false, error: result.error })
+      }
+      return NextResponse.json({ success: true, price: result.price })
     }
 
     return NextResponse.json({ error: 'unknown action' }, { status: 400 })
@@ -106,12 +115,16 @@ export async function POST(req: NextRequest) {
       : await placeSellOrder(symbol, quantity, price)
 
     // 거래 내역 저장
-    if (result.success) {
+    if (result.success && result.orderNo) {
+      // 현재가 조회
+      const priceResult = await getCurrentPrice(symbol)
+      const executedPrice = price || priceResult.price || 0
+
       await supabase.from('trade_history').insert({
         symbol,
         action,
         quantity,
-        price: price || await getCurrentPrice(symbol),
+        price: executedPrice,
         order_no: result.orderNo,
         executed_at: new Date().toISOString(),
         profit_loss: 0, // 청산 시 계산
@@ -120,7 +133,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({
       success: result.success,
-      message: result.message,
+      error: result.error,
       orderNo: result.orderNo
     })
   } catch(e) {

@@ -18,8 +18,14 @@ export async function GET(req: NextRequest) {
   }
   if (action === 'sync') {
     try {
-      const balance = await getBalance()
-      await syncPositionsFromKIS(balance.holdings)
+      const balanceResult = await getBalance()
+      if (!balanceResult.success || !balanceResult.balance) {
+        return NextResponse.json({
+          success: false,
+          error: balanceResult.error ?? 'KIS 연동 후 사용 가능합니다'
+        })
+      }
+      await syncPositionsFromKIS(balanceResult.balance.holdings)
       const summary = await getPortfolioSummary()
       return NextResponse.json({ synced: true, ...summary })
     } catch {

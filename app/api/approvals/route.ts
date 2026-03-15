@@ -96,7 +96,7 @@ export async function POST(req: NextRequest) {
         : await placeSellOrder(request.symbol, request.quantity, request.price)
 
       if (!result.success) {
-        return NextResponse.json({ success: false, message: result.message })
+        return NextResponse.json({ success: false, message: result.error ?? '주문 실패' })
       }
 
       // 상태 업데이트 + 거래 내역 저장
