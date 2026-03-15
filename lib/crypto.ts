@@ -13,7 +13,12 @@ export interface CryptoQuote {
 
 export interface CryptoHistoricalData {
   date: string;
-  price: number;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  price: number; // alias for close (backward compatibility)
+  volume: number;
 }
 
 // 심볼 매핑 (표준 심볼 → Binance 심볼)
@@ -147,7 +152,12 @@ export async function getCryptoHistorical(
     // ]
     const historical: CryptoHistoricalData[] = data.map((kline: any[]) => ({
       date: new Date(kline[0]).toISOString().split("T")[0],
-      price: parseFloat(kline[4]), // close price
+      open: parseFloat(kline[1]),
+      high: parseFloat(kline[2]),
+      low: parseFloat(kline[3]),
+      close: parseFloat(kline[4]),
+      price: parseFloat(kline[4]), // close price (backward compatibility)
+      volume: parseFloat(kline[5]),
     }));
 
     // 캐시 저장

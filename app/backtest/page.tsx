@@ -465,9 +465,13 @@ export default function BacktestPage() {
                     onClick={() => setStrategy(key)}
                     className={`p-4 rounded-xl border-2 transition-all ${
                       strategy === key
-                        ? `border-[${s.color}] bg-[${s.color}]/10`
+                        ? ""
                         : "border-gray-800 bg-[#0a1020]"
                     }`}
+                    style={strategy === key ? {
+                      borderColor: s.color,
+                      backgroundColor: `${s.color}1A`, // 10% opacity
+                    } : undefined}
                   >
                     <div className="text-2xl mb-2">{s.icon}</div>
                     <div className="text-xs font-bold">{s.name}</div>

@@ -325,11 +325,11 @@ export async function POST(request: NextRequest) {
       const historical = await getCryptoHistorical(coinId, periodYears * 365);
       prices = historical.map((h) => ({
         date: h.date,
-        open: h.price,
-        high: h.price,
-        low: h.price,
-        close: h.price,
-        volume: 0,
+        open: h.open,
+        high: h.high,
+        low: h.low,
+        close: h.close,
+        volume: h.volume,
       }));
     } else {
       const period = `${periodYears}y`;
@@ -338,8 +338,8 @@ export async function POST(request: NextRequest) {
 
     console.log(`📊 데이터 조회 완료: ${prices.length}일`);
 
-    if (prices.length < 200) {
-      const errorMsg = `${symbol}: 데이터 ${prices.length}일만 조회됨 (최소 200일 필요). ${assetType === "crypto" ? "암호화폐는 1-2년 권장" : "주식/ETF는 1-3년 권장"}`;
+    if (prices.length < 210) {
+      const errorMsg = `${symbol}: 데이터 ${prices.length}일만 조회됨 (최소 210일 필요). ${assetType === "crypto" ? "암호화폐는 2년 이상 권장" : "주식/ETF는 1-2년 이상 권장"}`;
       console.error(`❌ ${errorMsg}`);
       return NextResponse.json(
         { success: false, error: errorMsg },
