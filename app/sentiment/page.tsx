@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 
 interface SentimentData {
   fear_greed: number
@@ -48,7 +48,7 @@ export default function SentimentPage() {
     setTimeout(() => setToast(null), 5000)
   }
 
-  const load = async () => {
+  const load = useCallback(async () => {
     setLoading(true)
     try {
       const res = await fetch(`/api/sentiment?action=get&symbol=${symbol}`)
@@ -78,9 +78,9 @@ export default function SentimentPage() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [symbol])
 
-  useEffect(() => { load() }, [])
+  useEffect(() => { load() }, [load])
 
   const meta = data ? (SIGNAL_META[data.signal] ?? SIGNAL_META.NEUTRAL) : null
 
