@@ -56,15 +56,24 @@ export async function fetchRecentDisclosures(
   console.log(`[DART Client] API response status: ${data.status}`)
   console.log(`[DART Client] API response message: ${data.message || 'none'}`)
 
-  if (data.status !== '000') {
+  // DART API 상태 코드 처리
+  // 000: 정상
+  // 013: 조회된 데이터 없음 (정상 - 주말/공휴일 등)
+  if (data.status === '000') {
+    // 정상 응답
+    if (!data.list || data.list.length === 0) {
+      console.log('[DART Client] No disclosures found (empty list)')
+      return []
+    }
+  } else if (data.status === '013') {
+    // 데이터 없음 (정상)
+    console.log('[DART Client] No disclosures found (status 013 - no data)')
+    return []
+  } else {
+    // 실제 에러
     const errorMsg = data.message || `DART API 상태 코드: ${data.status}`
     console.error(`[DART Client] API error: ${errorMsg}`)
     throw new Error(errorMsg)
-  }
-
-  if (!data.list || data.list.length === 0) {
-    console.log('[DART Client] No disclosures found')
-    return []
   }
 
   console.log(`[DART Client] Found ${data.list.length} disclosures`)
