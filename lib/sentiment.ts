@@ -13,9 +13,14 @@ export interface SentimentData {
 export async function fetchFearGreed(): Promise<number> {
   try {
     const res  = await fetch('https://api.alternative.me/fng/?limit=1', { next: { revalidate: 3600 } })
+    if (!res.ok) {
+      console.warn('[Sentiment] Fear&Greed API error:', res.status)
+      return 50
+    }
     const data = await res.json()
     return Number(data.data?.[0]?.value ?? 50)
-  } catch {
+  } catch (error) {
+    console.error('[Sentiment] Fear&Greed fetch failed:', error)
     return 50
   }
 }
@@ -23,11 +28,35 @@ export async function fetchFearGreed(): Promise<number> {
 // 뉴스 감정 분석 (Gemini 활용)
 export async function analyzeNewsSentiment(symbol: string): Promise<number> {
   try {
+    // Finnhub API 키 체크
+    if (!process.env.FINNHUB_API_KEY) {
+      console.warn('[Sentiment] FINNHUB_API_KEY not set - news sentiment disabled')
+      return 0
+    }
+
+    // MARKET 심볼이면 SPY로 대체 (S&P500 대표)
+    const targetSymbol = symbol === 'MARKET' ? 'SPY' : symbol
+
     const newsRes = await fetch(
-      `https://finnhub.io/api/v1/company-news?symbol=${symbol}&from=${getDateStr(-7)}&to=${getDateStr(0)}&token=${process.env.FINNHUB_API_KEY}`
+      `https://finnhub.io/api/v1/company-news?symbol=${targetSymbol}&from=${getDateStr(-7)}&to=${getDateStr(0)}&token=${process.env.FINNHUB_API_KEY}`
     )
+
+    if (!newsRes.ok) {
+      console.warn('[Sentiment] Finnhub API error:', newsRes.status)
+      return 0
+    }
+
     const news = await newsRes.json()
-    if (!Array.isArray(news) || news.length === 0) return 0
+    if (!Array.isArray(news) || news.length === 0) {
+      console.log('[Sentiment] No news found for', targetSymbol)
+      return 0
+    }
+
+    // Gemini API 키 체크
+    if (!process.env.GEMINI_API_KEY) {
+      console.warn('[Sentiment] GEMINI_API_KEY not set - using neutral sentiment')
+      return 0
+    }
 
     const headlines = news.slice(0, 10).map((n: Record<string,string>) => n.headline).join('\n')
     const res = await fetch(
@@ -42,11 +71,18 @@ export async function analyzeNewsSentiment(symbol: string): Promise<number> {
         })
       }
     )
+
+    if (!res.ok) {
+      console.warn('[Sentiment] Gemini API error:', res.status)
+      return 0
+    }
+
     const data = await res.json()
     const text  = data.candidates?.[0]?.content?.parts?.[0]?.text ?? '0'
     const score = parseFloat(text.match(/-?\d+\.?\d*/)?.[0] ?? '0')
     return isFinite(score) ? Math.max(-1, Math.min(1, score)) : 0
-  } catch {
+  } catch (error) {
+    console.error('[Sentiment] News sentiment analysis failed:', error)
     return 0
   }
 }
@@ -102,6 +138,54 @@ export function getContrarianSignal(composite: number): {
     reason: '탐욕 구간 — 부분 익절 고려'
   }
   return { action: 'HOLD', strength: 0.3, reason: '중립 구간 — 신호 없음' }
+}
+
+// Reddit 커뮤니티 감정 분석 (무료)
+export async function analyzeCommunityScore(symbol: string): Promise<number> {
+  try {
+    // MARKET 심볼은 건너뛰기
+    if (symbol === 'MARKET') return 0
+
+    // Reddit API (무료, 키 불필요)
+    const res = await fetch(
+      `https://www.reddit.com/r/wallstreetbets/search.json?q=${symbol}&sort=new&limit=25&t=week`,
+      { headers: { 'User-Agent': 'finsi-sentiment-bot/1.0' } }
+    )
+
+    if (!res.ok) {
+      console.warn('[Sentiment] Reddit API error:', res.status)
+      return 0
+    }
+
+    const data = await res.json()
+    const posts = data?.data?.children ?? []
+
+    if (posts.length === 0) return 0
+
+    // 긍정/부정 키워드 기반 간단 분석
+    const positiveWords = ['moon', 'bullish', 'calls', 'rocket', '🚀', 'buy', 'long', 'gain']
+    const negativeWords = ['bearish', 'puts', 'short', 'sell', 'loss', 'dump', 'crash']
+
+    let score = 0
+    posts.forEach((post: any) => {
+      const title = (post?.data?.title ?? '').toLowerCase()
+      const upvotes = post?.data?.ups ?? 0
+      const weight = Math.min(upvotes / 100, 1) // 최대 가중치 1
+
+      positiveWords.forEach(word => {
+        if (title.includes(word)) score += (0.1 * weight)
+      })
+      negativeWords.forEach(word => {
+        if (title.includes(word)) score -= (0.1 * weight)
+      })
+    })
+
+    // -1 ~ 1 범위로 정규화
+    return Math.max(-1, Math.min(1, score / posts.length))
+  } catch (error) {
+    console.error('[Sentiment] Community score failed:', error)
+    return 0
+  }
 }
 
 function getDateStr(daysOffset: number): string {

@@ -40,14 +40,44 @@ export default function SentimentPage() {
   const [contrarian, setContrarian]= useState<Contrarian | null>(null)
   const [symbol,     setSymbol]    = useState('MARKET')
   const [loading,    setLoading]   = useState(false)
+  const [toast,      setToast]     = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null)
+
+  // 토스트 표시
+  const showToast = (message: string, type: 'success' | 'error' | 'info' = 'info') => {
+    setToast({ message, type })
+    setTimeout(() => setToast(null), 5000)
+  }
 
   const load = async () => {
     setLoading(true)
-    const res  = await fetch(`/api/sentiment?action=get&symbol=${symbol}`)
-    const json = await res.json()
-    setData(json.data)
-    setContrarian(json.contrarian)
-    setLoading(false)
+    try {
+      const res = await fetch(`/api/sentiment?action=get&symbol=${symbol}`)
+
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}: ${res.statusText}`)
+      }
+
+      const json = await res.json()
+
+      if (json.error) {
+        showToast(json.error, 'error')
+        setData(null)
+        setContrarian(null)
+      } else {
+        setData(json.data)
+        setContrarian(json.contrarian)
+        if (!json.cached) {
+          showToast('실시간 감정 분석 완료', 'success')
+        }
+      }
+    } catch (error) {
+      console.error('감정 분석 실패:', error)
+      showToast(`분석 실패: ${(error as Error).message}`, 'error')
+      setData(null)
+      setContrarian(null)
+    } finally {
+      setLoading(false)
+    }
   }
 
   useEffect(() => { load() }, [])
@@ -57,6 +87,17 @@ export default function SentimentPage() {
   return (
     <div className="min-h-screen bg-[#0a0e1a] text-white p-4 md:p-6">
       <div className="max-w-3xl mx-auto">
+        {/* 토스트 알림 */}
+        {toast && (
+          <div className={`fixed top-4 right-4 z-50 px-4 py-3 rounded-lg shadow-lg transition-opacity ${
+            toast.type === 'success' ? 'bg-green-600' :
+            toast.type === 'error' ? 'bg-red-600' :
+            'bg-blue-600'
+          }`}>
+            <p className="text-sm font-medium text-white">{toast.message}</p>
+          </div>
+        )}
+
         <div className="mb-6">
           <h1 className="text-2xl font-bold text-orange-400">시장 감정 지표</h1>
           <p className="text-gray-500 text-sm mt-1">공포/탐욕 → 역발상 매매 신호</p>
@@ -66,13 +107,24 @@ export default function SentimentPage() {
           <input type="text" placeholder="종목 (비우면 시장 전체)"
             value={symbol === 'MARKET' ? '' : symbol}
             onChange={e => setSymbol(e.target.value.toUpperCase() || 'MARKET')}
+            onKeyDown={e => e.key === 'Enter' && !loading && load()}
             className="flex-1 bg-gray-800 rounded-lg px-3 py-2 text-white text-sm"
           />
           <button onClick={load} disabled={loading}
-            className="px-4 py-2 bg-orange-500 hover:bg-orange-600 disabled:opacity-40 rounded-lg text-sm font-semibold">
+            className="px-4 py-2 bg-orange-500 hover:bg-orange-600 disabled:opacity-40 disabled:cursor-not-allowed rounded-lg text-sm font-semibold">
             {loading ? '분석 중...' : '감정 분석'}
           </button>
         </div>
+
+        {loading && !data && (
+          <div className="space-y-4 animate-pulse">
+            <div className="bg-gray-900 rounded-xl p-5 h-32"></div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="bg-gray-900 rounded-xl p-4 h-24"></div>
+              <div className="bg-gray-900 rounded-xl p-4 h-24"></div>
+            </div>
+          </div>
+        )}
 
         {data && meta && (
           <div className="space-y-4">
@@ -125,7 +177,8 @@ export default function SentimentPage() {
             )}
 
             <div className="bg-gray-900/50 rounded-xl p-3 text-xs text-gray-500">
-              공포/탐욕 지수 출처: Alternative.me | 뉴스 감정: Finnhub + Gemini AI
+              <p>공포/탐욕: Alternative.me (무료) | 뉴스 감정: Finnhub + Gemini AI</p>
+              <p>커뮤니티: Reddit r/wallstreetbets (무료) | 검색 트렌드: Google Trends 연동 예정</p>
             </div>
           </div>
         )}
