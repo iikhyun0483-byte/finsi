@@ -52,46 +52,68 @@ export default function Home() {
 
       {/* Main Dashboard */}
       <main className="mx-auto max-w-7xl px-6 py-8 relative z-10">
-        <div className="mb-8">
-          <div className="flex items-center gap-3 mb-2">
-            <Globe className="w-6 h-6 text-[#00d4ff]" />
-            <h2 className="font-orbitron text-xl font-bold text-[#00d4ff]">MARKET INDICATORS</h2>
-          </div>
-          <p className="font-mono text-sm text-[rgba(255,255,255,0.5)] tracking-wide">
-            REAL-TIME GLOBAL MARKET ANALYSIS
-          </p>
-        </div>
-
-        {/* Quick Stats */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
-          {loading ? (
-            <div className="col-span-4 text-center py-10">
-              <Activity className="w-12 h-12 text-[#00d4ff] mx-auto mb-4 animate-pulse" />
-              <div className="font-mono text-sm text-[rgba(0,212,255,0.7)] tracking-wide">
-                LOADING MARKET DATA...
+        {/* Macro Indicators Section - READ ONLY */}
+        <div className="mb-12">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <div className="flex items-center gap-3 mb-2">
+                <Globe className="w-6 h-6 text-[#00d4ff]" />
+                <h2 className="font-orbitron text-xl font-bold text-[#00d4ff]">MARKET INDICATORS</h2>
+                <span className="px-2 py-0.5 bg-[rgba(0,212,255,0.1)] border border-[rgba(0,212,255,0.3)] rounded text-[10px] font-mono text-[#00d4ff] tracking-wider">
+                  READ ONLY
+                </span>
               </div>
+              <p className="font-mono text-sm text-[rgba(255,255,255,0.5)] tracking-wide">
+                실시간 모니터링 전용 - 클릭 불가
+              </p>
             </div>
-          ) : macro ? (
-            [
-              { label: getIndicatorLabel("Fear & Greed"), value: Math.round(macro.fearGreed), color: "status-warning" },
-              { label: getIndicatorLabel("VIX"), value: macro.vix.toFixed(1).replace(/\.0$/, ""), color: "status-profit" },
-              { label: "미국 기준금리 (Fed Rate)", value: macro.fedRate >= 0 ? `${macro.fedRate.toFixed(2).replace(/\.?0+$/, "")}%` : "N/A", color: macro.fedRate >= 0 ? "status-cyan" : "text-[rgba(255,255,255,0.3)]" },
-              { label: getIndicatorLabel("Buffett Indicator"), value: Math.round(macro.buffett), color: "status-warning" },
-            ].map((stat, i) => (
-              <div key={i} className={`jarvis-card p-5 card-fade-in depth-3d stagger-${(i % 4) + 1}`}>
-                <div className="label-display mb-3">{stat.label}</div>
-                <div className={`number-display text-3xl ${stat.color} number-glow`}>
-                  {typeof stat.value === 'number' ? (
-                    <CountUp end={stat.value} duration={1500} decimals={0} />
-                  ) : typeof stat.value === 'string' && !stat.value.includes('N/A') && !stat.value.includes('%') ? (
-                    <CountUp end={parseFloat(stat.value)} duration={1500} decimals={1} />
-                  ) : (
-                    stat.value
-                  )}
+          </div>
+
+          {/* Quick Stats - Non-clickable */}
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            {loading ? (
+              <div className="col-span-4 text-center py-10">
+                <Activity className="w-12 h-12 text-[#00d4ff] mx-auto mb-4 animate-pulse" />
+                <div className="font-mono text-sm text-[rgba(0,212,255,0.7)] tracking-wide">
+                  LOADING MARKET DATA...
                 </div>
               </div>
-            ))
-          ) : null}
+            ) : macro ? (
+              [
+                { label: getIndicatorLabel("Fear & Greed"), value: Math.round(macro.fearGreed), color: "status-warning" },
+                { label: getIndicatorLabel("VIX"), value: macro.vix.toFixed(1).replace(/\.0$/, ""), color: "status-profit" },
+                { label: "미국 기준금리 (Fed Rate)", value: macro.fedRate >= 0 ? `${macro.fedRate.toFixed(2).replace(/\.?0+$/, "")}%` : "N/A", color: macro.fedRate >= 0 ? "status-cyan" : "text-[rgba(255,255,255,0.3)]" },
+                { label: getIndicatorLabel("Buffett Indicator"), value: Math.round(macro.buffett), color: "status-warning" },
+              ].map((stat, i) => (
+                <div key={i} className={`jarvis-card p-5 card-fade-in stagger-${(i % 4) + 1} cursor-default opacity-90`}>
+                  <div className="label-display mb-3">{stat.label}</div>
+                  <div className={`number-display text-3xl ${stat.color} number-glow`}>
+                    {typeof stat.value === 'number' ? (
+                      <CountUp end={stat.value} duration={1500} decimals={0} />
+                    ) : typeof stat.value === 'string' && !stat.value.includes('N/A') && !stat.value.includes('%') ? (
+                      <CountUp end={parseFloat(stat.value)} duration={1500} decimals={1} />
+                    ) : (
+                      stat.value
+                    )}
+                  </div>
+                </div>
+              ))
+            ) : null}
+          </div>
+        </div>
+
+        {/* Navigation Cards Section - CLICKABLE */}
+        <div className="mb-8">
+          <div className="flex items-center gap-3 mb-4">
+            <Zap className="w-6 h-6 text-[#00d4ff]" />
+            <h2 className="font-orbitron text-xl font-bold text-[#00d4ff]">QUICK ACCESS</h2>
+            <span className="px-2 py-0.5 bg-[rgba(0,255,100,0.1)] border border-[rgba(0,255,100,0.3)] rounded text-[10px] font-mono text-[#00ff64] tracking-wider">
+              CLICKABLE
+            </span>
+          </div>
+          <p className="font-mono text-sm text-[rgba(255,255,255,0.5)] tracking-wide mb-6">
+            클릭하여 각 기능으로 이동
+          </p>
         </div>
 
         {/* Navigation Cards */}
