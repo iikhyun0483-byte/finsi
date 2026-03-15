@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { formatKRW, formatPctRaw } from '@/lib/format'
 
 type AssetCategory =
@@ -60,6 +60,7 @@ export default function AssetsPage() {
   const [showAddAsset, setShowAddAsset] = useState(false)
   const [showAddLiability, setShowAddLiability] = useState(false)
   const [showAddCashflow, setShowAddCashflow] = useState(false)
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' | 'warning' } | null>(null)
 
   // 폼 상태
   const [assetForm, setAssetForm] = useState({
@@ -74,9 +75,12 @@ export default function AssetsPage() {
     category: '', amount: '', date: new Date().toISOString().split('T')[0], note: '',
   })
 
-  useEffect(() => { fetchAll() }, [])
+  const showToast = useCallback((message: string, type: 'success' | 'error' | 'info' | 'warning' = 'info') => {
+    setToast({ message, type })
+    setTimeout(() => setToast(null), 5000)
+  }, [])
 
-  async function fetchAll() {
+  const fetchAll = useCallback(async () => {
     setLoading(true)
     try {
       const [assetsRes, holdingsRes] = await Promise.all([
@@ -89,10 +93,13 @@ export default function AssetsPage() {
       setHoldings(Array.isArray(holdingsRes) ? holdingsRes : [])
     } catch (e) {
       console.error('[AssetsPage fetch]', e)
+      showToast('데이터 로드 실패', 'error')
     } finally {
       setLoading(false)
     }
-  }
+  }, [showToast])
+
+  useEffect(() => { fetchAll() }, [fetchAll])
 
   // 순자산 계산
   const stockTotal = holdings.reduce((sum, h) => sum + h.buy_price * h.quantity, 0)
@@ -100,72 +107,188 @@ export default function AssetsPage() {
   const liabilityTotal = liabilities.reduce((sum, l) => sum + l.remaining, 0)
   const netWorth = stockTotal + nonStockTotal - liabilityTotal
 
+  const now = new Date()
   const monthlyIncome = cashflow
-    .filter(c => c.type === 'income' && new Date(c.date).getMonth() === new Date().getMonth())
+    .filter(c => {
+      const date = new Date(c.date)
+      return c.type === 'income' &&
+        date.getMonth() === now.getMonth() &&
+        date.getFullYear() === now.getFullYear()
+    })
     .reduce((sum, c) => sum + c.amount, 0)
   const monthlyExpense = cashflow
-    .filter(c => c.type === 'expense' && new Date(c.date).getMonth() === new Date().getMonth())
+    .filter(c => {
+      const date = new Date(c.date)
+      return c.type === 'expense' &&
+        date.getMonth() === now.getMonth() &&
+        date.getFullYear() === now.getFullYear()
+    })
     .reduce((sum, c) => sum + c.amount, 0)
   const monthlySaving = monthlyIncome - monthlyExpense
 
   async function handleAddAsset() {
-    if (!assetForm.name || !assetForm.current_value) return
-    await fetch('/api/assets', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        table: 'assets_non_stock',
-        category: assetForm.category,
-        name: assetForm.name,
-        purchase_price: Number(assetForm.purchase_price) || 0,
-        current_value: Number(assetForm.current_value),
-        note: assetForm.note,
-        currency: 'KRW',
-      }),
-    })
-    setShowAddAsset(false)
-    setAssetForm({ category: '부동산', name: '', purchase_price: '', current_value: '', note: '' })
-    fetchAll()
+    if (!assetForm.name.trim() || !assetForm.current_value) {
+      showToast('필수 항목을 입력하세요', 'warning')
+      return
+    }
+
+    const current = parseFloat(assetForm.current_value)
+    if (isNaN(current) || current < 0) {
+      showToast('현재 가치는 0 이상이어야 합니다', 'warning')
+      return
+    }
+
+    const purchase = assetForm.purchase_price ? parseFloat(assetForm.purchase_price) : 0
+    if (assetForm.purchase_price && (isNaN(purchase) || purchase < 0)) {
+      showToast('취득가는 0 이상이어야 합니다', 'warning')
+      return
+    }
+
+    try {
+      const res = await fetch('/api/assets', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          table: 'assets_non_stock',
+          category: assetForm.category,
+          name: assetForm.name.trim(),
+          purchase_price: purchase,
+          current_value: current,
+          note: assetForm.note.trim(),
+          currency: 'KRW',
+        }),
+      })
+
+      if (!res.ok) {
+        showToast('자산 추가 실패', 'error')
+        return
+      }
+
+      showToast('자산이 추가되었습니다', 'success')
+      setShowAddAsset(false)
+      setAssetForm({ category: '부동산', name: '', purchase_price: '', current_value: '', note: '' })
+      fetchAll()
+    } catch (e) {
+      console.error('[handleAddAsset]', e)
+      showToast(`네트워크 오류: ${(e as Error).message}`, 'error')
+    }
   }
 
   async function handleAddLiability() {
-    if (!liabilityForm.name || !liabilityForm.remaining) return
-    await fetch('/api/assets', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        table: 'liabilities',
-        name: liabilityForm.name,
-        principal: Number(liabilityForm.principal) || 0,
-        remaining: Number(liabilityForm.remaining),
-        interest_rate: Number(liabilityForm.interest_rate) || 0,
-        due_date: liabilityForm.due_date || null,
-        note: liabilityForm.note,
-      }),
-    })
-    setShowAddLiability(false)
-    setLiabilityForm({ name: '', principal: '', remaining: '', interest_rate: '', due_date: '', note: '' })
-    fetchAll()
+    if (!liabilityForm.name.trim() || !liabilityForm.remaining) {
+      showToast('필수 항목을 입력하세요', 'warning')
+      return
+    }
+
+    const remaining = parseFloat(liabilityForm.remaining)
+    if (isNaN(remaining) || remaining < 0) {
+      showToast('잔액은 0 이상이어야 합니다', 'warning')
+      return
+    }
+
+    const principal = liabilityForm.principal ? parseFloat(liabilityForm.principal) : 0
+    if (liabilityForm.principal && (isNaN(principal) || principal < 0)) {
+      showToast('원금은 0 이상이어야 합니다', 'warning')
+      return
+    }
+
+    const interestRate = liabilityForm.interest_rate ? parseFloat(liabilityForm.interest_rate) : 0
+    if (liabilityForm.interest_rate && (isNaN(interestRate) || interestRate < 0)) {
+      showToast('이자율은 0 이상이어야 합니다', 'warning')
+      return
+    }
+
+    try {
+      const res = await fetch('/api/assets', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          table: 'liabilities',
+          name: liabilityForm.name.trim(),
+          principal,
+          remaining,
+          interest_rate: interestRate,
+          due_date: liabilityForm.due_date || null,
+          note: liabilityForm.note.trim(),
+        }),
+      })
+
+      if (!res.ok) {
+        showToast('부채 추가 실패', 'error')
+        return
+      }
+
+      showToast('부채가 추가되었습니다', 'success')
+      setShowAddLiability(false)
+      setLiabilityForm({ name: '', principal: '', remaining: '', interest_rate: '', due_date: '', note: '' })
+      fetchAll()
+    } catch (e) {
+      console.error('[handleAddLiability]', e)
+      showToast(`네트워크 오류: ${(e as Error).message}`, 'error')
+    }
   }
 
   async function handleAddCashflow() {
-    if (!cashflowForm.amount || !cashflowForm.date) return
-    await fetch('/api/assets', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        table: 'cashflow',
-        type: cashflowForm.type,
-        category: cashflowForm.category,
-        amount: Number(cashflowForm.amount),
-        date: cashflowForm.date,
-        note: cashflowForm.note,
-        currency: 'KRW',
-      }),
-    })
-    setShowAddCashflow(false)
-    setCashflowForm({ type: 'income', category: '', amount: '', date: new Date().toISOString().split('T')[0], note: '' })
-    fetchAll()
+    if (!cashflowForm.amount || !cashflowForm.date) {
+      showToast('금액과 날짜를 입력하세요', 'warning')
+      return
+    }
+
+    const amount = parseFloat(cashflowForm.amount)
+    if (isNaN(amount) || amount <= 0) {
+      showToast('금액은 0보다 커야 합니다', 'warning')
+      return
+    }
+
+    try {
+      const res = await fetch('/api/assets', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          table: 'cashflow',
+          type: cashflowForm.type,
+          category: cashflowForm.category.trim(),
+          amount,
+          date: cashflowForm.date,
+          note: cashflowForm.note.trim(),
+          currency: 'KRW',
+        }),
+      })
+
+      if (!res.ok) {
+        showToast('현금흐름 추가 실패', 'error')
+        return
+      }
+
+      showToast('현금흐름이 추가되었습니다', 'success')
+      setShowAddCashflow(false)
+      setCashflowForm({ type: 'income', category: '', amount: '', date: new Date().toISOString().split('T')[0], note: '' })
+      fetchAll()
+    } catch (e) {
+      console.error('[handleAddCashflow]', e)
+      showToast(`네트워크 오류: ${(e as Error).message}`, 'error')
+    }
+  }
+
+  async function handleDelete(table: string, id: string, name: string) {
+    try {
+      const res = await fetch('/api/assets', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ table, id }),
+      })
+
+      if (!res.ok) {
+        showToast('삭제 실패', 'error')
+        return
+      }
+
+      showToast(`${name} 삭제되었습니다`, 'info')
+      fetchAll()
+    } catch (e) {
+      console.error('[handleDelete]', e)
+      showToast(`네트워크 오류: ${(e as Error).message}`, 'error')
+    }
   }
 
   const tabs = [
@@ -179,6 +302,18 @@ export default function AssetsPage() {
   return (
     <div className="min-h-screen bg-[#0a0e1a] text-white p-4 md:p-6">
       <div className="max-w-5xl mx-auto">
+
+        {/* Toast 알림 */}
+        {toast && (
+          <div className={`fixed top-4 right-4 z-50 px-4 py-3 rounded-lg shadow-lg transition-opacity ${
+            toast.type === 'success' ? 'bg-green-600' :
+            toast.type === 'error' ? 'bg-red-600' :
+            toast.type === 'warning' ? 'bg-yellow-600' :
+            'bg-blue-600'
+          }`}>
+            <p className="text-sm font-medium text-white">{toast.message}</p>
+          </div>
+        )}
 
         {/* 헤더 */}
         <div className="mb-6">
@@ -374,11 +509,19 @@ export default function AssetsPage() {
                     </p>
                     <p className="text-gray-400 text-sm">{a.category}</p>
                   </div>
-                  <div className="text-right">
-                    <p className="text-white font-medium">{formatKRW(a.current_value)}</p>
-                    <p className={`text-sm ${gain >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                      {gain >= 0 ? '+' : ''}{formatPctRaw(gainPct)}
-                    </p>
+                  <div className="flex items-center gap-3">
+                    <div className="text-right">
+                      <p className="text-white font-medium">{formatKRW(a.current_value)}</p>
+                      <p className={`text-sm ${gain >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                        {gain >= 0 ? '+' : ''}{formatPctRaw(gainPct)}
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => handleDelete('assets_non_stock', a.id, a.name)}
+                      className="px-2 py-1 text-xs bg-red-500/20 hover:bg-red-500/30 text-red-400 rounded"
+                    >
+                      🗑️
+                    </button>
                   </div>
                 </div>
               )
@@ -424,9 +567,17 @@ export default function AssetsPage() {
                   <p className="font-semibold text-white">🔴 {l.name}</p>
                   <p className="text-gray-400 text-sm">이자 {l.interest_rate}%</p>
                 </div>
-                <div className="text-right">
-                  <p className="text-red-400 font-medium">{formatKRW(l.remaining)}</p>
-                  <p className="text-gray-400 text-sm">원금 {formatKRW(l.principal)}</p>
+                <div className="flex items-center gap-3">
+                  <div className="text-right">
+                    <p className="text-red-400 font-medium">{formatKRW(l.remaining)}</p>
+                    <p className="text-gray-400 text-sm">원금 {formatKRW(l.principal)}</p>
+                  </div>
+                  <button
+                    onClick={() => handleDelete('liabilities', l.id, l.name)}
+                    className="px-2 py-1 text-xs bg-red-500/20 hover:bg-red-500/30 text-red-400 rounded"
+                  >
+                    🗑️
+                  </button>
                 </div>
               </div>
             ))}
@@ -482,9 +633,17 @@ export default function AssetsPage() {
                   </p>
                   <p className="text-gray-400 text-sm">{c.date}</p>
                 </div>
-                <p className={`font-medium ${c.type === 'income' ? 'text-green-400' : 'text-red-400'}`}>
-                  {c.type === 'income' ? '+' : '-'}{formatKRW(c.amount)}
-                </p>
+                <div className="flex items-center gap-3">
+                  <p className={`font-medium ${c.type === 'income' ? 'text-green-400' : 'text-red-400'}`}>
+                    {c.type === 'income' ? '+' : '-'}{formatKRW(c.amount)}
+                  </p>
+                  <button
+                    onClick={() => handleDelete('cashflow', c.id, c.category || (c.type === 'income' ? '수입' : '지출'))}
+                    className="px-2 py-1 text-xs bg-red-500/20 hover:bg-red-500/30 text-red-400 rounded"
+                  >
+                    🗑️
+                  </button>
+                </div>
               </div>
             ))}
           </div>

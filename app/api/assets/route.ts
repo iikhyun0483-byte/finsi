@@ -42,3 +42,23 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: '저장 실패' }, { status: 500 })
   }
 }
+
+export async function DELETE(req: NextRequest) {
+  try {
+    const body = await req.json()
+    const { table, id } = body
+    const allowed = ['assets_non_stock', 'liabilities', 'cashflow']
+    if (!allowed.includes(table)) {
+      return NextResponse.json({ error: '허용되지 않은 테이블' }, { status: 400 })
+    }
+    if (!id) {
+      return NextResponse.json({ error: 'ID가 필요합니다' }, { status: 400 })
+    }
+    const { error } = await supabase.from(table).delete().eq('id', id)
+    if (error) throw error
+    return NextResponse.json({ ok: true })
+  } catch (e) {
+    console.error('[assets DELETE]', e)
+    return NextResponse.json({ error: '삭제 실패' }, { status: 500 })
+  }
+}
