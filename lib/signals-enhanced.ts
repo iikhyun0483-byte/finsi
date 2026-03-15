@@ -478,10 +478,23 @@ export async function generateSignalsEnhanced(
     console.warn("DXY 가격 조회 실패:", error);
   }
 
-  // 병렬 처리로 성능 최적화
-  const signals = await Promise.all(
-    inputs.map((input) => generateSignalEnhanced(input, dxyPrice))
-  );
+  // 순차 처리 (Finnhub/Alpha Vantage API rate limit 방지)
+  const signals: SignalOutputEnhanced[] = [];
+
+  for (let i = 0; i < inputs.length; i++) {
+    try {
+      const signal = await generateSignalEnhanced(inputs[i], dxyPrice);
+      signals.push(signal);
+
+      // Rate limit 방지: API 호출 사이 200ms 대기
+      if (i < inputs.length - 1) {
+        await new Promise(resolve => setTimeout(resolve, 200));
+      }
+    } catch (error) {
+      console.error(`❌ ${inputs[i].symbol} 신호 생성 실패:`, error);
+      // 실패한 종목은 스킵하고 계속 진행
+    }
+  }
 
   return signals.sort((a, b) => b.score - a.score);
 }

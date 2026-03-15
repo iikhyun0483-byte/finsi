@@ -149,7 +149,7 @@ export async function GET() {
       price_krw: Math.round(signal.price * exchangeRate),
     }));
 
-    // 6. Supabase에 일괄 저장 (upsert)
+    // 6. Supabase에 일괄 저장 (delete 후 insert)
     const signalsToSave = signalsWithKRW.map((signal) => ({
       symbol: signal.symbol,
       name: signal.name,
@@ -167,13 +167,24 @@ export async function GET() {
       high_risk: signal.highRisk,
     }));
 
-    const { error: upsertError } = await supabase
+    // 기존 신호 전체 삭제 (최신 신호로 대체)
+    const { error: deleteError } = await supabase
       .from("signals")
-      .upsert(signalsToSave, { onConflict: "symbol" });
+      .delete()
+      .neq("id", 0); // 전체 삭제 (id는 항상 0이 아니므로)
 
-    if (upsertError) {
-      console.error("❌ Supabase upsert 실패:", upsertError);
-      throw new Error(`DB 저장 실패: ${upsertError.message}`);
+    if (deleteError) {
+      console.error("❌ Supabase 기존 신호 삭제 실패:", deleteError);
+    }
+
+    // 새 신호 일괄 insert
+    const { error: insertError } = await supabase
+      .from("signals")
+      .insert(signalsToSave);
+
+    if (insertError) {
+      console.error("❌ Supabase insert 실패:", insertError);
+      throw new Error(`DB 저장 실패: ${insertError.message}`);
     }
 
     console.log(`✅ DB 저장 완료: ${signalsToSave.length}개 신호`);
