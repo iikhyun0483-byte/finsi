@@ -23,6 +23,7 @@ export default function PortfolioPage() {
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [macro, setMacro] = useState<any>(null);
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' | 'warning' } | null>(null);
 
   // 추가 폼 상태
   const [newSymbol, setNewSymbol] = useState("");
@@ -31,19 +32,41 @@ export default function PortfolioPage() {
   const [newBuyPrice, setNewBuyPrice] = useState("");
   const [newAssetType, setNewAssetType] = useState<"stock" | "crypto">("stock");
 
+  const showToast = useCallback((message: string, type: 'success' | 'error' | 'info' | 'warning' = 'info') => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 5000);
+  }, []);
+
   // localStorage에서 포트폴리오 불러오기
   useEffect(() => {
     const saved = localStorage.getItem("finsi_portfolio");
     if (saved) {
       try {
-        setPortfolio(JSON.parse(saved));
+        const parsed = JSON.parse(saved);
+        // 배열 검증
+        if (Array.isArray(parsed)) {
+          // 각 항목 유효성 체크
+          const validated = parsed.filter(item =>
+            item.symbol &&
+            typeof item.quantity === 'number' && item.quantity > 0 &&
+            typeof item.avgBuyPrice === 'number' && item.avgBuyPrice > 0 &&
+            item.assetType &&
+            item.name
+          );
+          if (validated.length !== parsed.length) {
+            showToast(`${parsed.length - validated.length}개 항목이 유효하지 않아 제외되었습니다`, 'warning');
+          }
+          setPortfolio(validated);
+        } else {
+          showToast('저장된 데이터 형식 오류', 'error');
+        }
       } catch (error) {
         console.error("Failed to load portfolio:", error);
+        showToast('포트폴리오 로드 실패', 'error');
       }
     }
-    // 샘플 데이터 제거 - 사용자가 직접 추가
     setLoading(false);
-  }, []);
+  }, [showToast]);
 
   // 실시간 가격 불러오기
   const fetchPrices = useCallback(async () => {
@@ -56,12 +79,16 @@ export default function PortfolioPage() {
     try {
       const symbols = portfolio.map((item) => item.symbol);
 
-      // API 호출 (CORS 문제 해결)
       const response = await fetch("/api/realtime-prices", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ symbols }),
       });
+
+      if (!response.ok) {
+        showToast('가격 조회 실패', 'error');
+        return;
+      }
 
       const data = await response.json();
 
@@ -71,13 +98,21 @@ export default function PortfolioPage() {
           priceMap.set(symbol, price as RealtimePrice);
         });
         setPrices(priceMap);
+
+        const failedCount = symbols.length - priceMap.size;
+        if (failedCount > 0) {
+          showToast(`${failedCount}개 종목 가격 조회 실패`, 'warning');
+        }
+      } else {
+        showToast(`가격 조회 실패: ${data.error || '알 수 없는 오류'}`, 'error');
       }
     } catch (error) {
       console.error("Failed to fetch prices:", error);
+      showToast(`네트워크 오류: ${(error as Error).message}`, 'error');
     } finally {
       setLoading(false);
     }
-  }, [portfolio]);
+  }, [portfolio, showToast]);
 
   useEffect(() => {
     fetchPrices();
@@ -85,15 +120,37 @@ export default function PortfolioPage() {
 
   // 매크로 데이터 불러오기
   useEffect(() => {
-    fetch("/api/market")
-      .then((res) => res.json())
-      .then((data) => {
+    const loadMacro = async () => {
+      try {
+        const res = await fetch("/api/market");
+        if (!res.ok) {
+          showToast('매크로 데이터 로드 실패', 'warning');
+          return;
+        }
+        const data = await res.json();
         if (data.success) {
           setMacro(data.macroIndicators);
+        } else {
+          showToast('매크로 데이터 조회 실패', 'warning');
         }
-      })
-      .catch(console.error);
-  }, []);
+      } catch (error) {
+        console.error("Failed to load macro data:", error);
+        showToast('매크로 데이터 네트워크 오류', 'warning');
+      }
+    };
+    loadMacro();
+  }, [showToast]);
+
+  // 30초마다 가격 자동 갱신
+  useEffect(() => {
+    if (portfolio.length === 0) return;
+
+    const interval = setInterval(() => {
+      fetchPrices();
+    }, 30000); // 30초
+
+    return () => clearInterval(interval);
+  }, [portfolio.length, fetchPrices]);
 
   // 포트폴리오 저장
   const savePortfolio = (newPortfolio: PortfolioItem[]) => {
@@ -103,20 +160,34 @@ export default function PortfolioPage() {
 
   // 종목 추가
   const handleAddStock = () => {
-    if (!newSymbol || !newName || !newQuantity || !newBuyPrice) {
-      alert("모든 필드를 입력해주세요");
+    if (!newSymbol.trim() || !newName.trim() || !newQuantity || !newBuyPrice) {
+      showToast("모든 필드를 입력해주세요", 'warning');
+      return;
+    }
+
+    const qty = parseFloat(newQuantity);
+    const price = parseFloat(newBuyPrice);
+
+    if (isNaN(qty) || qty <= 0) {
+      showToast("수량은 0보다 커야 합니다", 'warning');
+      return;
+    }
+    if (isNaN(price) || price <= 0) {
+      showToast("매수가는 0보다 커야 합니다", 'warning');
       return;
     }
 
     const newItem: PortfolioItem = {
-      symbol: newSymbol.toUpperCase(),
-      name: newName,
-      quantity: parseFloat(newQuantity),
-      avgBuyPrice: parseFloat(newBuyPrice),
+      symbol: newSymbol.toUpperCase().trim(),
+      name: newName.trim(),
+      quantity: qty,
+      avgBuyPrice: price,
       assetType: newAssetType,
     };
 
     savePortfolio([...portfolio, newItem]);
+
+    showToast(`${newItem.symbol} 종목이 추가되었습니다`, 'success');
 
     // 폼 초기화
     setNewSymbol("");
@@ -129,10 +200,10 @@ export default function PortfolioPage() {
 
   // 종목 삭제
   const handleDeleteStock = (index: number) => {
-    if (confirm(`${portfolio[index].symbol}을(를) 삭제하시겠습니까?`)) {
-      const newPortfolio = portfolio.filter((_, i) => i !== index);
-      savePortfolio(newPortfolio);
-    }
+    const item = portfolio[index];
+    const newPortfolio = portfolio.filter((_, i) => i !== index);
+    savePortfolio(newPortfolio);
+    showToast(`${item.symbol} 종목이 삭제되었습니다`, 'info');
   };
 
   // 종목 편집 시작
@@ -150,22 +221,36 @@ export default function PortfolioPage() {
   // 종목 편집 저장
   const handleEditStock = () => {
     if (editingIndex === null) return;
-    if (!newSymbol || !newName || !newQuantity || !newBuyPrice) {
-      alert("모든 필드를 입력해주세요");
+    if (!newSymbol.trim() || !newName.trim() || !newQuantity || !newBuyPrice) {
+      showToast("모든 필드를 입력해주세요", 'warning');
+      return;
+    }
+
+    const qty = parseFloat(newQuantity);
+    const price = parseFloat(newBuyPrice);
+
+    if (isNaN(qty) || qty <= 0) {
+      showToast("수량은 0보다 커야 합니다", 'warning');
+      return;
+    }
+    if (isNaN(price) || price <= 0) {
+      showToast("매수가는 0보다 커야 합니다", 'warning');
       return;
     }
 
     const updatedItem: PortfolioItem = {
-      symbol: newSymbol.toUpperCase(),
-      name: newName,
-      quantity: parseFloat(newQuantity),
-      avgBuyPrice: parseFloat(newBuyPrice),
+      symbol: newSymbol.toUpperCase().trim(),
+      name: newName.trim(),
+      quantity: qty,
+      avgBuyPrice: price,
       assetType: newAssetType,
     };
 
     const newPortfolio = [...portfolio];
     newPortfolio[editingIndex] = updatedItem;
     savePortfolio(newPortfolio);
+
+    showToast(`${updatedItem.symbol} 종목이 수정되었습니다`, 'success');
 
     // 폼 초기화
     setNewSymbol("");
@@ -205,6 +290,18 @@ export default function PortfolioPage() {
 
   return (
     <div className="min-h-screen bg-[#080810] text-white">
+      {/* 토스트 알림 */}
+      {toast && (
+        <div className={`fixed top-4 right-4 z-50 px-4 py-3 rounded-lg shadow-lg transition-opacity ${
+          toast.type === 'success' ? 'bg-green-600' :
+          toast.type === 'error' ? 'bg-red-600' :
+          toast.type === 'warning' ? 'bg-yellow-600' :
+          'bg-blue-600'
+        }`}>
+          <p className="text-sm font-medium text-white">{toast.message}</p>
+        </div>
+      )}
+
       <header className="border-b border-gray-800 bg-gradient-to-r from-[#0d1321] to-[#0f1e35]">
         <div className="mx-auto max-w-7xl px-6 py-4">
           <div className="text-xs tracking-[4px] text-blue-400 mb-1">MY PORTFOLIO</div>
@@ -349,10 +446,12 @@ export default function PortfolioPage() {
                               <div>
                                 <div className="font-bold">{item.symbol}</div>
                                 <div className="text-xs text-gray-400">{item.name}</div>
-                                {priceData && (
+                                {priceData ? (
                                   <div className={`text-xs ${priceData.changePercent >= 0 ? 'text-green-500' : 'text-red-500'}`}>
                                     {priceData.changePercent >= 0 ? '▲' : '▼'} {Math.abs(priceData.changePercent).toFixed(2)}%
                                   </div>
+                                ) : (
+                                  <div className="text-xs text-red-400">가격 조회 실패</div>
                                 )}
                               </div>
                               <span style={{
