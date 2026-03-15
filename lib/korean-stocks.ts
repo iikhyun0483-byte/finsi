@@ -3,6 +3,8 @@
  * 네이버 금융 API 활용
  */
 
+import { supabase } from "./supabase";
+
 export interface KoreanStock {
   code: string;
   name: string;
@@ -73,12 +75,56 @@ export const KOREAN_STOCKS: KoreanStock[] = [
   { code: '227830', name: 'TIGER방산', market: 'KOSPI', category: 'ETF' },
 ];
 
-// 카테고리별 종목 가져오기
+// 종목 목록 캐시 (1분)
+let stocksCache: { data: KoreanStock[]; expiry: number } | null = null;
+const STOCKS_CACHE_DURATION = 60 * 1000; // 1분
+
+/**
+ * Supabase에서 활성화된 한국 주식 목록 조회 (캐시 1분)
+ */
+export async function getKoreanStocks(): Promise<KoreanStock[]> {
+  // 캐시 확인
+  if (stocksCache && Date.now() < stocksCache.expiry) {
+    return stocksCache.data;
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from("korean_stocks")
+      .select("code, name, market, category")
+      .eq("enabled", true)
+      .order("category", { ascending: true });
+
+    if (error) throw error;
+
+    const stocks = (data || []) as KoreanStock[];
+
+    // 캐시 저장
+    stocksCache = {
+      data: stocks,
+      expiry: Date.now() + STOCKS_CACHE_DURATION,
+    };
+
+    console.log(`✅ 한국 주식 목록 로드: ${stocks.length}개`);
+    return stocks;
+  } catch (error) {
+    console.error("❌ 한국 주식 DB 조회 실패, 하드코딩 폴백 사용:", error);
+    return KOREAN_STOCKS;
+  }
+}
+
+// 카테고리별 종목 가져오기 (클라이언트용 - 동기)
 export function getStocksByCategory(category: string): KoreanStock[] {
   return KOREAN_STOCKS.filter(stock => stock.category === category);
 }
 
-// 카테고리 목록
+// 카테고리별 종목 가져오기 (서버용 - 비동기, DB 사용)
+export async function getStocksByCategoryAsync(category: string): Promise<KoreanStock[]> {
+  const stocks = await getKoreanStocks();
+  return stocks.filter(stock => stock.category === category);
+}
+
+// 카테고리 목록 (폴백용)
 export const CATEGORIES = [
   '대형주',
   '성장주',
@@ -88,6 +134,20 @@ export const CATEGORIES = [
   '방산',
   'ETF',
 ];
+
+/**
+ * DB에서 카테고리 목록 가져오기 (중복 제거)
+ */
+export async function getCategories(): Promise<string[]> {
+  try {
+    const stocks = await getKoreanStocks();
+    const categories = [...new Set(stocks.map(s => s.category))];
+    return categories;
+  } catch (error) {
+    console.error("❌ 카테고리 조회 실패, 하드코딩 폴백 사용:", error);
+    return CATEGORIES;
+  }
+}
 
 // 네이버 금융 크롤링으로 현재가 가져오기
 export async function getNaverStockPrice(code: string): Promise<KoreanStockPrice | null> {

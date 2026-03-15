@@ -166,3 +166,19 @@ export async function getConfigValue(key: keyof SystemConfig): Promise<number> {
   const config = await getSystemConfig();
   return config[key];
 }
+
+/**
+ * 암호화폐 심볼 목록 조회 (문자열 배열)
+ */
+export async function getCryptoSymbols(): Promise<string[]> {
+  const symbols = await getEnabledSymbols("crypto");
+  return symbols.map(s => s.symbol);
+}
+
+/**
+ * 암호화폐 여부 판단
+ */
+export async function isCryptoSymbol(symbol: string): Promise<boolean> {
+  const cryptoSymbols = await getCryptoSymbols();
+  return cryptoSymbols.includes(symbol.toUpperCase());
+}

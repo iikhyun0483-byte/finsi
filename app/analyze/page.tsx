@@ -1,14 +1,13 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/common/Card";
-import { Button } from "@/components/common/Button";
+import { CATEGORIES } from "@/lib/korean-stocks";
+import { getAssetDisplayName, getIndicatorLabel } from "@/lib/design-system";
+import { Activity, ChevronRight, DollarSign } from "lucide-react";
+import { ParticleBackground } from "@/components/effects/ParticleBackground";
 import { ScoreMeter } from "@/components/beginner/ScoreMeter";
 import { RSIGauge } from "@/components/beginner/RSIGauge";
-import { KOREAN_STOCKS, CATEGORIES, getStocksByCategory } from "@/lib/korean-stocks";
-import { getAssetDisplayName, getIndicatorLabel, formatPriceWithKRW, formatPercent } from "@/lib/design-system";
-import { TrendingUp, TrendingDown, Activity, DollarSign, Globe, Coins, ChevronRight } from "lucide-react";
-import { ParticleBackground } from "@/components/effects/ParticleBackground";
 import { CountUp } from "@/components/effects/CountUp";
 import { TypingEffect } from "@/components/effects/TypingEffect";
 import { calcIntegratedScore } from "@/lib/score-engine";
@@ -25,6 +24,13 @@ import {
   rateToScore,
 } from "@/lib/score-helpers";
 import { runEnsemble } from "@/lib/ensemble-engine";
+import { AnalyzeHeader } from "@/components/analyze/AnalyzeHeader";
+import { MarketTypeTabs } from "@/components/analyze/MarketTypeTabs";
+import { SearchInput } from "@/components/analyze/SearchInput";
+import { ErrorDisplay } from "@/components/analyze/ErrorDisplay";
+import { KoreanResult } from "@/components/analyze/KoreanResult";
+import { GlobalCryptoResult } from "@/components/analyze/GlobalCryptoResult";
+import { AICommentCard } from "@/components/analyze/AICommentCard";
 
 type MarketType = 'global' | 'crypto' | 'korean';
 
@@ -177,252 +183,33 @@ export default function AnalyzePage() {
       <div className="stars-layer stars-medium" />
       <div className="stars-layer stars-large" />
 
-      {/* Grid Background */}
-
-      <header className="border-b border-[rgba(0,212,255,0.12)] bg-[rgba(0,20,45,0.3)] backdrop-blur-xl">
-        <div className="mx-auto max-w-7xl px-6 py-5">
-          <div className="flex items-center gap-3">
-            <Activity className="w-8 h-8 text-[#00d4ff]" />
-            <div>
-              <div className="font-mono text-xs tracking-[3px] text-[rgba(0,212,255,0.7)] mb-1">
-                J.A.R.V.I.S ASSET ANALYZER
-              </div>
-              <h1 className="font-orbitron text-2xl font-bold text-[#00d4ff] tracking-wide">
-                종목 분석 시스템
-              </h1>
-            </div>
-          </div>
-        </div>
-      </header>
+      <AnalyzeHeader />
 
       <main className="mx-auto max-w-7xl px-6 py-8">
-        {/* 마켓 타입 탭 */}
-        <div className="mb-8 flex gap-3 border-b border-[rgba(0,212,255,0.12)] pb-2">
-          <button
-            onClick={() => handleMarketChange('global')}
-            className={`px-6 py-3 font-orbitron font-semibold transition-all flex items-center gap-2 ${
-              marketType === 'global'
-                ? 'border-b-2 border-[#00d4ff] text-[#00d4ff]'
-                : 'border-b-2 border-transparent text-[rgba(255,255,255,0.4)] hover:text-[#00d4ff]'
-            }`}
-          >
-            <Globe className="w-4 h-4" />
-            <span>GLOBAL</span>
-          </button>
-          <button
-            onClick={() => handleMarketChange('crypto')}
-            className={`px-6 py-3 font-orbitron font-semibold transition-all flex items-center gap-2 ${
-              marketType === 'crypto'
-                ? 'border-b-2 border-[#00d4ff] text-[#00d4ff]'
-                : 'border-b-2 border-transparent text-[rgba(255,255,255,0.4)] hover:text-[#00d4ff]'
-            }`}
-          >
-            <Coins className="w-4 h-4" />
-            <span>CRYPTO</span>
-          </button>
-          <button
-            onClick={() => handleMarketChange('korean')}
-            className={`px-6 py-3 font-orbitron font-semibold transition-all flex items-center gap-2 ${
-              marketType === 'korean'
-                ? 'border-b-2 border-[#00d4ff] text-[#00d4ff]'
-                : 'border-b-2 border-transparent text-[rgba(255,255,255,0.4)] hover:text-[#00d4ff]'
-            }`}
-          >
-            <DollarSign className="w-4 h-4" />
-            <span>KOREAN</span>
-          </button>
-        </div>
+        <MarketTypeTabs
+          marketType={marketType}
+          onMarketChange={handleMarketChange}
+        />
 
-        {/* 검색 */}
-        <Card className="mb-8">
-          <CardContent>
-            {marketType === 'korean' ? (
-              // 한국주식: 카테고리 + 종목 선택
-              <>
-                <div className="flex gap-3 mb-3">
-                  <select
-                    value={koreanCategory}
-                    onChange={(e) => {
-                      setKoreanCategory(e.target.value);
-                      setKoreanCode("");
-                    }}
-                    className="jarvis-input px-4 py-3 font-orbitron"
-                  >
-                    {CATEGORIES.map(cat => (
-                      <option key={cat} value={cat}>{cat}</option>
-                    ))}
-                  </select>
-                  <select
-                    value={koreanCode}
-                    onChange={(e) => setKoreanCode(e.target.value)}
-                    className="flex-1 jarvis-input px-4 py-3 font-orbitron"
-                  >
-                    <option value="">종목 선택</option>
-                    {getStocksByCategory(koreanCategory).map(stock => (
-                      <option key={stock.code} value={stock.code}>
-                        {stock.name} ({stock.code})
-                      </option>
-                    ))}
-                  </select>
-                  <Button onClick={handleAnalyze} disabled={loading || !koreanCode}>
-                    {loading ? "⚙️ 분석 중..." : "🔍 분석하기"}
-                  </Button>
-                </div>
-                <div className="mt-3 font-mono text-xs text-[rgba(0,212,255,0.5)] tracking-wide">
-                  <ChevronRight className="w-3 h-3 inline mr-1" />
-                  NAVER FINANCE REAL-TIME (5MIN CACHE)
-                </div>
-              </>
-            ) : (
-              // 해외주식/암호화폐: 직접 입력
-              <>
-                <div className="flex gap-3">
-                  <input
-                    type="text"
-                    value={symbol}
-                    onChange={(e) => setSymbol(e.target.value.toUpperCase())}
-                    onKeyPress={(e) => e.key === 'Enter' && handleAnalyze()}
-                    onFocus={(e) => e.target.select()}
-                    placeholder={
-                      marketType === 'crypto'
-                        ? "CRYPTO CODE (BTC, ETH, SOL...)"
-                        : "SYMBOL (SPY, QQQ, AAPL...)"
-                    }
-                    className="flex-1 jarvis-input px-4 py-3 font-orbitron"
-                  />
-                  <Button onClick={handleAnalyze} disabled={loading || !symbol}>
-                    {loading ? "⚙️ 분석 중..." : "🔍 분석하기"}
-                  </Button>
-                </div>
-                <div className="mt-3 text-xs text-gray-500">
-                  {marketType === 'crypto'
-                    ? "💡 지원: BTC, ETH, SOL, XRP, BNB (실시간 데이터)"
-                    : "💡 지원: SPY, QQQ, AAPL, TSLA, GLD, SLV, USO, TLT (실시간 데이터)"}
-                </div>
-              </>
-            )}
-          </CardContent>
-        </Card>
+        <SearchInput
+          marketType={marketType}
+          symbol={symbol}
+          onSymbolChange={setSymbol}
+          koreanCategory={koreanCategory}
+          koreanCode={koreanCode}
+          onKoreanCategoryChange={setKoreanCategory}
+          onKoreanCodeChange={setKoreanCode}
+          loading={loading}
+          onAnalyze={handleAnalyze}
+        />
 
-        {/* 에러 */}
-        {error && (
-          <Card className="mb-8 border-red-500/30 bg-red-500/10">
-            <CardContent>
-              <div className="text-center py-6">
-                <div className="text-4xl mb-3">⚠️</div>
-                <div className="text-red-400 font-semibold">{error}</div>
-                <div className="text-sm text-gray-400 mt-2">
-                  종목 코드를 확인하거나 다른 종목을 시도해보세요
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        )}
+        {error && <ErrorDisplay error={error} />}
 
         {/* 결과 */}
         {result && (
           <>
             {result.isKorean ? (
-              // 한국주식 결과
-              <div className="mb-8">
-                <div className="flex items-center gap-3 mb-6">
-                  <TrendingUp className="w-6 h-6 text-[#00d4ff]" />
-                  <h2 className="font-orbitron text-xl font-bold text-[#00d4ff]">
-                    {result.name} ({result.symbol})
-                  </h2>
-                  <span className="font-mono text-sm text-[rgba(255,255,255,0.4)]">
-                    {result.market}
-                  </span>
-                </div>
-
-                {/* 가격 정보 */}
-                <Card className="mb-4">
-                  <CardContent>
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                      <div>
-                        <div className="label-display mb-2">PRICE</div>
-                        <div className="number-display text-2xl">
-                          ₩{result.price?.toLocaleString()}
-                        </div>
-                      </div>
-                      <div>
-                        <div className="label-display mb-2">CHANGE</div>
-                        <div className={`font-orbitron text-2xl font-bold flex items-center gap-1 ${
-                          result.changePercent > 0 ? 'status-profit' :
-                          result.changePercent < 0 ? 'status-loss' :
-                          'text-[rgba(255,255,255,0.4)]'
-                        }`}>
-                          {result.changePercent > 0 ? (
-                            <TrendingUp className="w-5 h-5" />
-                          ) : result.changePercent < 0 ? (
-                            <TrendingDown className="w-5 h-5" />
-                          ) : null}
-                          {Math.abs(result.change)?.toLocaleString()}
-                          <span className="text-sm">
-                            ({formatPercent(Math.abs(result.changePercent))})
-                          </span>
-                        </div>
-                      </div>
-                      <div>
-                        <div className="label-display mb-2">VOLUME</div>
-                        <div className="font-orbitron text-xl font-semibold text-white">
-                          {result.volume?.toLocaleString()}
-                        </div>
-                      </div>
-                      <div>
-                        <div className="label-display mb-2">CATEGORY</div>
-                        <div className="font-orbitron text-xl font-semibold status-cyan">
-                          {result.category}
-                        </div>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-
-                {/* 펀더멘털 (ETF 제외) */}
-                {result.category !== 'ETF' && (
-                  <Card>
-                    <CardHeader>
-                      <CardTitle>💎 펀더멘털</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="grid grid-cols-2 gap-4">
-                        <div className="p-4 bg-gray-800/50 rounded-lg">
-                          <div className="text-xs text-gray-400 mb-1">PER (배)</div>
-                          <div className="text-xl font-bold">
-                            {result.per !== undefined ? result.per.toFixed(2) : 'N/A'}
-                          </div>
-                        </div>
-                        <div className="p-4 bg-gray-800/50 rounded-lg">
-                          <div className="text-xs text-gray-400 mb-1">PBR (배)</div>
-                          <div className="text-xl font-bold">
-                            {result.pbr !== undefined ? result.pbr.toFixed(2) : 'N/A'}
-                          </div>
-                        </div>
-                      </div>
-                      <div className="mt-4 p-3 bg-blue-500/10 border border-blue-500/30 rounded-lg text-sm text-gray-300">
-                        💡 네이버 금융 기준 펀더멘털 데이터 (실시간)
-                      </div>
-                    </CardContent>
-                  </Card>
-                )}
-
-                {result.category === 'ETF' && (
-                  <Card className="border-blue-500/30 bg-blue-500/5">
-                    <CardContent>
-                      <div className="text-center py-6">
-                        <div className="text-4xl mb-3">📊</div>
-                        <div className="text-lg font-semibold text-blue-400 mb-2">
-                          ETF (상장지수펀드)
-                        </div>
-                        <div className="text-sm text-gray-400">
-                          ETF는 여러 종목의 포트폴리오이므로 개별 재무제표가 없습니다
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                )}
-              </div>
+              <KoreanResult result={result} />
             ) : (
               // 해외주식/암호화폐 결과
               <>

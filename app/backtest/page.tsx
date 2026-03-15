@@ -5,6 +5,7 @@ import { Button } from "@/components/common/Button";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/common/Card";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Area, AreaChart, BarChart, Bar } from "recharts";
 import { formatKRW } from "@/lib/format";
+import { isCryptoSymbol } from "@/lib/constants";
 
 const STRATEGIES = {
   buy_and_hold: {
@@ -76,9 +77,8 @@ export default function BacktestPage() {
   const runBacktest = async () => {
     setLoading(true);
     try {
-      // 암호화폐 심볼 목록
-      const cryptoSymbols = ["BTC", "ETH", "SOL", "XRP", "ADA", "DOGE", "DOT", "AVAX"];
-      const isCrypto = cryptoSymbols.includes(symbol.toUpperCase());
+      // 암호화폐 여부 판단
+      const isCrypto = isCryptoSymbol(symbol);
 
       const requestBody = {
         symbol,
@@ -118,9 +118,8 @@ export default function BacktestPage() {
     setSignalLoading(true);
     setSignalResult(null);
     try {
-      // 암호화폐 심볼 목록
-      const cryptoSymbols = ["BTC", "ETH", "SOL", "XRP", "ADA", "DOGE", "DOT", "AVAX"];
-      const isCrypto = cryptoSymbols.includes(signalSymbol);
+      // 암호화폐 여부 판단
+      const isCrypto = isCryptoSymbol(signalSymbol);
 
       const response = await fetch("/api/validate-signals", {
         method: "POST",

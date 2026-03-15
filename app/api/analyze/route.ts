@@ -5,11 +5,9 @@ import { getAllMacroIndicators } from "@/lib/macro";
 import { generateSignalsEnhanced } from "@/lib/signals-enhanced";
 import { getRealtimePrices } from "@/lib/realtime-price";
 import { getUSDToKRW } from "@/lib/exchange";
+import { isCryptoSymbol } from "@/lib/config";
 
 export const dynamic = "force-dynamic";
-
-// 암호화폐 심볼 목록
-const CRYPTO_SYMBOLS = ["BTC", "ETH", "SOL", "XRP", "ADA", "DOGE", "DOT", "AVAX"];
 
 export async function GET(request: Request) {
   try {
@@ -26,7 +24,7 @@ export async function GET(request: Request) {
     console.log(`📊 종목 분석: ${symbol}`);
 
     // 암호화폐 여부 판단
-    const isCrypto = CRYPTO_SYMBOLS.includes(symbol.toUpperCase());
+    const isCrypto = await isCryptoSymbol(symbol);
     const assetType = isCrypto ? "crypto" : "stock";
 
     // 1. 과거 데이터 조회 (최소 300일)

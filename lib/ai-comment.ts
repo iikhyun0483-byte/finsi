@@ -15,7 +15,19 @@ export interface AICommentInput {
   week52Low?: boolean;
 }
 
+// AI 코멘트 캐시 (1시간)
+const commentCache = new Map<string, { comment: string; expiry: number }>();
+const CACHE_DURATION = 60 * 60 * 1000; // 1시간
+
 export async function generateAIComment(input: AICommentInput): Promise<string> {
+  // 캐시 키: symbol_score (점수가 같으면 비슷한 코멘트)
+  const cacheKey = `${input.symbol}_${input.score}`;
+  const cached = commentCache.get(cacheKey);
+
+  if (cached && Date.now() < cached.expiry) {
+    console.log(`💾 AI 코멘트 캐시 사용: ${cacheKey}`);
+    return cached.comment;
+  }
   try {
     // 서버 사이드에서만 접근 가능한 환경변수 (API route에서 호출됨)
     const apiKey = process.env.GEMINI_API_KEY;
@@ -59,7 +71,7 @@ ${input.week52Low ? '- 📉 52주 신저가 갱신' : ''}
     console.log('📡 Gemini API 호출 중...');
 
     const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${apiKey}`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -91,7 +103,17 @@ ${input.week52Low ? '- 📉 52주 신저가 갱신' : ''}
     const comment = data.candidates?.[0]?.content?.parts?.[0]?.text || "AI 코멘트 생성 실패";
 
     console.log('✅ AI 코멘트 생성 완료:', comment.substring(0, 50) + '...');
-    return comment.trim();
+
+    const trimmedComment = comment.trim();
+
+    // 캐시 저장
+    commentCache.set(cacheKey, {
+      comment: trimmedComment,
+      expiry: Date.now() + CACHE_DURATION,
+    });
+    console.log(`💾 AI 코멘트 캐시 저장: ${cacheKey}`);
+
+    return trimmedComment;
   } catch (error: any) {
     console.error('❌ AI 코멘트 생성 오류:', error);
     console.error('오류 상세:', error.message);
