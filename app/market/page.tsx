@@ -71,9 +71,11 @@ export default function MarketPage() {
 
   const fetchLeadingIndicators = async () => {
     try {
-      const { getLeadingIndicatorScore } = await import("@/lib/leading-indicators");
-      const score = await getLeadingIndicatorScore("SPY");
-      setLeadingScore(score);
+      const response = await fetch("/api/leading-indicators?symbol=SPY");
+      const result = await response.json();
+      if (result.success) {
+        setLeadingScore(result.leadingScore);
+      }
     } catch (error) {
       console.error("Failed to fetch leading indicators:", error);
     }
