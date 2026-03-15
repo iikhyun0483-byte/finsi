@@ -47,6 +47,12 @@ export default function MacroPage() {
   const [syncing, setSyncing] = useState(false)
   const [loading, setLoading] = useState(true)
   const [lastSync, setLastSync] = useState<string | null>(null)
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' | 'warning' } | null>(null)
+
+  const showToast = (message: string, type: 'success' | 'error' | 'info' | 'warning' = 'info') => {
+    setToast({ message, type })
+    setTimeout(() => setToast(null), 5000)
+  }
 
   const load = useCallback(async () => {
     try {
@@ -57,6 +63,7 @@ export default function MacroPage() {
 
       if (!res.ok) {
         console.error('❌ Failed to load score:', json)
+        showToast(`데이터 로드 실패: ${json.error || '알 수 없는 오류'}`, 'error')
         return
       }
 
@@ -65,9 +72,11 @@ export default function MacroPage() {
         setData(json)
       } else {
         console.warn('⚠️ No score in response:', json)
+        showToast('데이터 없음 - 상단 버튼으로 수집하세요', 'info')
       }
     } catch (e) {
       console.error('❌ Load error:', e)
+      showToast(`오류: ${(e as Error).message}`, 'error')
     }
     setLoading(false)
   }, [])
@@ -81,7 +90,7 @@ export default function MacroPage() {
 
       if (!res.ok) {
         console.error('❌ Sync failed:', json)
-        alert(`데이터 수집 실패: ${json.error || '알 수 없는 오류'}`)
+        showToast(`데이터 수집 실패: ${json.error || '알 수 없는 오류'}`, 'error')
         setSyncing(false)
         return
       }
@@ -89,14 +98,21 @@ export default function MacroPage() {
       console.log('✅ Sync completed:', json)
       setLastSync(new Date().toLocaleTimeString('ko-KR'))
 
-      // DB에 저장되는 시간을 고려하여 약간의 지연 후 재로드
-      console.log('⏳ Waiting 500ms for DB to update...')
-      await new Promise(resolve => setTimeout(resolve, 500))
+      // Fallback 사용 여부에 따라 Toast 메시지 변경
+      if (json.usedFallback && json.fallbackIndicators?.length > 0) {
+        showToast(
+          `데이터 수집 완료 (FRED API 키 없음 - ${json.fallbackIndicators.join(', ')} 기본값 사용)`,
+          'warning'
+        )
+      } else {
+        showToast(`데이터 수집 완료 (${json.signals?.length || 0}개 지표)`, 'success')
+      }
 
+      // DB 저장 완료 후 즉시 재로드
       await load()
     } catch (e) {
       console.error('❌ Sync error:', e)
-      alert(`데이터 수집 오류: ${e instanceof Error ? e.message : '네트워크 오류'}`)
+      showToast(`데이터 수집 오류: ${e instanceof Error ? e.message : '네트워크 오류'}`, 'error')
     }
     setSyncing(false)
   }
@@ -108,6 +124,18 @@ export default function MacroPage() {
   return (
     <div className="min-h-screen bg-[#0a0e1a] text-white p-4 md:p-6">
       <div className="max-w-3xl mx-auto">
+        {/* 토스트 알림 */}
+        {toast && (
+          <div className={`fixed top-4 right-4 z-50 px-4 py-3 rounded-lg shadow-lg transition-opacity ${
+            toast.type === 'success' ? 'bg-green-600' :
+            toast.type === 'error' ? 'bg-red-600' :
+            toast.type === 'warning' ? 'bg-yellow-600' :
+            'bg-blue-600'
+          }`}>
+            <p className="text-sm font-medium text-white">{toast.message}</p>
+          </div>
+        )}
+
         <div className="flex justify-between items-center mb-6">
           <div>
             <h1 className="text-2xl font-bold text-orange-400">매크로 지표</h1>

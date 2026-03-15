@@ -9,6 +9,14 @@ const supabase = createClient(
 
 const FRED_API_KEY = process.env.FRED_API_KEY!
 
+// FRED API 없을 때 Fallback 기본값
+const MACRO_DEFAULTS: Record<string, number> = {
+  FEDFUNDS: 4.5,    // 연방기금금리 (2024 Q4 기준)
+  UNRATE: 3.9,      // 실업률
+  CPIAUCSL: 3.2,    // CPI (전년 대비 %)
+  T10Y2Y: 0.3,      // 10년-2년 국채 금리차
+}
+
 interface MacroSignal {
   indicator: string
   value:     number
@@ -16,11 +24,22 @@ interface MacroSignal {
   impact:    string
 }
 
-// FRED 데이터 조회
-async function fetchFRED(series: string): Promise<number | null> {
+export interface SyncResult {
+  signals: MacroSignal[]
+  usedFallback: boolean
+  fallbackIndicators: string[]
+}
+
+// FRED 데이터 조회 (API 키 없으면 fallback 값 사용)
+async function fetchFRED(series: string): Promise<{ value: number | null; usedFallback: boolean }> {
   if (!FRED_API_KEY || FRED_API_KEY === 'your_api_key') {
+    const fallback = MACRO_DEFAULTS[series] ?? null
+    if (fallback !== null) {
+      console.warn(`⚠️ FRED_API_KEY not configured, using fallback for ${series}: ${fallback}`)
+      return { value: fallback, usedFallback: true }
+    }
     console.warn(`⚠️ FRED_API_KEY not configured, skipping ${series}`)
-    return null
+    return { value: null, usedFallback: false }
   }
 
   try {
@@ -28,8 +47,9 @@ async function fetchFRED(series: string): Promise<number | null> {
     const res  = await fetch(url, { next: { revalidate: 3600 } })
 
     if (!res.ok) {
-      console.warn(`⚠️ FRED API error for ${series}: ${res.status}`)
-      return null
+      console.warn(`⚠️ FRED API error for ${series}: ${res.status}, using fallback`)
+      const fallback = MACRO_DEFAULTS[series] ?? null
+      return { value: fallback, usedFallback: fallback !== null }
     }
 
     const data = await res.json()
@@ -38,12 +58,16 @@ async function fetchFRED(series: string): Promise<number | null> {
 
     if (result !== null) {
       console.log(`✅ FRED ${series}: ${result}`)
+      return { value: result, usedFallback: false }
     }
 
-    return result
+    // API 성공했지만 데이터 없으면 fallback
+    const fallback = MACRO_DEFAULTS[series] ?? null
+    return { value: fallback, usedFallback: fallback !== null }
   } catch (e) {
     console.warn(`⚠️ Failed to fetch FRED ${series}:`, e)
-    return null
+    const fallback = MACRO_DEFAULTS[series] ?? null
+    return { value: fallback, usedFallback: fallback !== null }
   }
 }
 
@@ -140,48 +164,78 @@ function interpretMacro(indicator: string, value: number): MacroSignal {
 }
 
 // 전체 매크로 수집 + DB 저장
-export async function syncMacroIndicators(): Promise<MacroSignal[]> {
+export async function syncMacroIndicators(): Promise<SyncResult> {
   console.log('📊 Starting macro indicators sync...')
 
-  const fetches: Array<[string, Promise<number | null>]> = [
-    ['VIX',       fetchVIX()],
-    ['DXY',       fetchDXY()],
-    ['FEDFUNDS',  fetchFRED('FEDFUNDS')],
-    ['UNRATE',    fetchFRED('UNRATE')],
-    ['CPIAUCSL',  fetchFRED('CPIAUCSL')],
-    ['T10Y2Y',    fetchFRED('T10Y2Y')],   // 장단기 금리차 (경기침체 선행)
-  ]
-
   const results: MacroSignal[] = []
+  const fallbackIndicators: string[] = []
 
-  for (const [name, promise] of fetches) {
-    const value = await promise
+  // VIX (Yahoo Finance - 항상 우선)
+  const vixValue = await fetchVIX()
+  if (vixValue !== null) {
+    const signal = interpretMacro('VIX', vixValue)
+    results.push(signal)
+    await saveToDb('VIX', vixValue, signal, 'Yahoo Finance')
+  }
+
+  // DXY (Yahoo Finance - 항상 우선)
+  const dxyValue = await fetchDXY()
+  if (dxyValue !== null) {
+    const signal = interpretMacro('DXY', dxyValue)
+    results.push(signal)
+    await saveToDb('DXY', dxyValue, signal, 'Yahoo Finance')
+  }
+
+  // FRED 지표들
+  const fredIndicators = ['FEDFUNDS', 'UNRATE', 'CPIAUCSL', 'T10Y2Y']
+  for (const name of fredIndicators) {
+    const { value, usedFallback } = await fetchFRED(name)
+
     if (value === null) {
       console.warn(`⚠️ Skipping ${name} - no data`)
       continue
     }
 
+    if (usedFallback) {
+      fallbackIndicators.push(name)
+    }
+
     const signal = interpretMacro(name, value)
     results.push(signal)
-
-    const { error: upsertError } = await supabase.from('macro_data').upsert({
-      indicator_type: name,
-      value: value,
-      signal: signal.signal,
-      source: name === 'VIX' || name === 'DXY' ? 'Yahoo Finance' : 'FRED',
-      impact: signal.impact,
-      updated_at: new Date().toISOString()
-    }, { onConflict: 'indicator_type' })
-
-    if (upsertError) {
-      console.error(`❌ Failed to save ${name} to DB:`, upsertError)
-    } else {
-      console.log(`✅ Saved ${name} to DB`)
-    }
+    await saveToDb(name, value, signal, usedFallback ? 'Fallback' : 'FRED')
   }
 
-  console.log(`✅ Macro sync completed: ${results.length} indicators`)
-  return results
+  console.log(`✅ Macro sync completed: ${results.length} indicators (${fallbackIndicators.length} fallback)`)
+
+  return {
+    signals: results,
+    usedFallback: fallbackIndicators.length > 0,
+    fallbackIndicators
+  }
+}
+
+// DB 저장 헬퍼 함수
+async function saveToDb(
+  name: string,
+  value: number,
+  signal: MacroSignal,
+  source: string
+): Promise<void> {
+  const { error } = await supabase.from('macro_data').upsert({
+    indicator_type: name,
+    value: value,
+    signal: signal.signal,
+    source: source,
+    impact: signal.impact,
+    updated_at: new Date().toISOString()
+  }, { onConflict: 'indicator_type' })
+
+  if (error) {
+    console.error(`❌ Failed to save ${name} to DB:`, error)
+    throw error
+  }
+
+  console.log(`✅ Saved ${name} to DB (${source})`)
 }
 
 // 매크로 종합 리스크 점수 (0~100, 높을수록 리스크)
