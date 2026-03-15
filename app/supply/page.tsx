@@ -60,6 +60,12 @@ export default function SupplyPage() {
     }
   }, [])
 
+  // 페이지 마운트 시 기본 종목(005930) 자동 조회
+  useEffect(() => {
+    setSymbol('005930')
+    loadSignal('005930')
+  }, [])
+
   const loadSignal = async (sym: string) => {
     if (!sym || sym.trim() === '') {
       showToast('종목코드를 입력하세요', 'error')
@@ -80,9 +86,6 @@ export default function SupplyPage() {
         setSignal(null)
       } else {
         setSignal(json)
-        if (json.data.length === 0) {
-          showToast('데이터 없음 — 수동 입력 또는 KIS API 연동 필요', 'info')
-        }
       }
     } catch (error) {
       console.error('수급 신호 조회 실패:', error)
@@ -158,7 +161,12 @@ export default function SupplyPage() {
         )}
 
         <div className="mb-6">
-          <h1 className="text-2xl font-bold text-orange-400">수급 추적</h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-2xl font-bold text-orange-400">수급 추적</h1>
+            <span className="px-2 py-0.5 bg-gray-700/50 border border-gray-600/40 rounded text-xs text-gray-400">
+              🔗 KIS 연동 예정
+            </span>
+          </div>
           <p className="text-gray-500 text-sm mt-1">외국인/기관 순매수 — 개인보다 먼저 아는 수급</p>
         </div>
 
@@ -220,7 +228,7 @@ export default function SupplyPage() {
             <p className={`text-sm font-medium mb-2 ${SCORE_COLOR(signal.score)}`}>
               {signal.signal} — {signal.reason}
             </p>
-            {Array.isArray(signal.data) && signal.data.length > 0 && (
+            {Array.isArray(signal.data) && signal.data.length > 0 ? (
               <div className="overflow-x-auto">
                 <table className="w-full text-xs">
                   <thead>
@@ -256,6 +264,10 @@ export default function SupplyPage() {
                     ))}
                   </tbody>
                 </table>
+              </div>
+            ) : (
+              <div className="text-center py-6 text-gray-500 text-sm">
+                KIS API 연동 후 외국인/기관 순매수 데이터가 표시됩니다
               </div>
             )}
           </div>
