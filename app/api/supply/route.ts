@@ -73,7 +73,7 @@ export async function GET(req: NextRequest) {
         console.log(`[Supply API] No data found for ${symbol}`)
         return NextResponse.json({
           signal: 'NEUTRAL',
-          reason: '데이터 없음 — 수동 입력 또는 KIS API 연동 필요',
+          reason: 'KIS API 연동 후 데이터가 표시됩니다',
           score: 0,
           data: []
         })

@@ -33,7 +33,7 @@ const DEFAULT_WATCHLIST = ['005930', '000660', 'SPY', 'QQQ', 'NVDA', 'AAPL']
 
 export default function SupplyPage() {
   const [data,      setData]      = useState<SupplyData[]>([])
-  const [symbol,    setSymbol]    = useState('')
+  const [symbol,    setSymbol]    = useState('005930')
   const [signal,    setSignal]    = useState<SignalResponse | null>(null)
   const [loading,   setLoading]   = useState(false)
   const [watchlist, setWatchlist] = useState<string[]>(DEFAULT_WATCHLIST)
@@ -62,7 +62,6 @@ export default function SupplyPage() {
 
   // 페이지 마운트 시 기본 종목(005930) 자동 조회
   useEffect(() => {
-    setSymbol('005930')
     loadSignal('005930')
   }, [])
 
