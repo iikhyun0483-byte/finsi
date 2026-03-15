@@ -31,12 +31,13 @@ export function calcDrawdownControl(input: DrawdownInput): DrawdownResult {
     }
   }
 
-  const triggered = [...scaleOutLevels].sort((a,b) => b-a).find(l => dd >= l)
+  const sortedLevels = [...scaleOutLevels].sort((a,b) => a-b)
+  const triggered = [...sortedLevels].reverse().find(l => dd >= l)
 
   if (triggered !== undefined) {
     const ratio = triggered / maxAllowedDD
     const mult  = Math.max(1 - ratio * 0.7, 0.1)
-    const next  = scaleOutLevels.find(l => l > triggered) ?? maxAllowedDD
+    const next  = sortedLevels.find(l => l > triggered) ?? maxAllowedDD
     return {
       currentDD: dd, positionMultiplier: mult, action: 'SCALE_DOWN',
       message: `낙폭 ${dd.toFixed(1)}% — 포지션 ${(mult*100).toFixed(0)}%로 축소`,
