@@ -225,7 +225,7 @@ export default function SupplyPage() {
               </span>
             </div>
             <p className={`text-sm font-medium mb-2 ${SCORE_COLOR(signal.score)}`}>
-              {signal.signal} — {signal.reason}
+              {signal.signal ? `${signal.signal} — ${signal.reason}` : signal.reason}
             </p>
             {Array.isArray(signal.data) && signal.data.length > 0 ? (
               <div className="overflow-x-auto">
