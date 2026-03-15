@@ -1,7 +1,7 @@
 // app/api/rebalance/route.ts
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { calcDrift, calcRebalanceTrades, logRebalance } from '@/lib/rebalancer'
+import { calcDrift, calcRebalanceTrades, logRebalance, updateCurrentPrices } from '@/lib/rebalancer'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -21,6 +21,11 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
     const { action, weights, totalValue, before, after, trades, driftScore } = body
+
+    if (action === 'updatePrices') {
+      const result = await updateCurrentPrices()
+      return NextResponse.json(result)
+    }
 
     if (action === 'calc') {
       const tv = totalValue ?? 10_000_000

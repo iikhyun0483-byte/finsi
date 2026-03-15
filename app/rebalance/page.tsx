@@ -38,12 +38,29 @@ export default function RebalancePage() {
   const [trades,     setTrades]     = useState<Trade[]>([])
   const [history,    setHistory]    = useState<RebalanceLog[]>([])
   const [loading,    setLoading]    = useState(false)
+  const [executing,  setExecuting]  = useState(false)
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' | 'warning' } | null>(null)
+
+  const showToast = useCallback((message: string, type: 'success' | 'error' | 'info' | 'warning' = 'info') => {
+    setToast({ message, type })
+    setTimeout(() => setToast(null), 5000)
+  }, [])
 
   const loadHistory = useCallback(async () => {
-    const res = await fetch('/api/rebalance')
-    const d   = await res.json()
-    setHistory(d.history ?? [])
-  }, [])
+    try {
+      const res = await fetch('/api/rebalance')
+      if (!res.ok) {
+        console.error('❌ Failed to load history')
+        showToast('이력 로드 실패', 'error')
+        return
+      }
+      const d = await res.json()
+      setHistory(d.history ?? [])
+    } catch (e) {
+      console.error('❌ Load history error:', e)
+      showToast(`이력 로드 오류: ${(e as Error).message}`, 'error')
+    }
+  }, [showToast])
 
   useEffect(() => { loadHistory() }, [loadHistory])
 
@@ -51,18 +68,103 @@ export default function RebalancePage() {
   const isValid     = Math.abs(totalWeight - 1) <= 0.01
 
   const calc = async () => {
-    if (!isValid) return
+    if (!isValid) {
+      showToast('비중 합계가 100%가 아닙니다', 'warning')
+      return
+    }
+
     setLoading(true)
-    const res  = await fetch('/api/rebalance', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'calc', weights, totalValue }),
-    })
-    const data = await res.json()
-    setDrift(data.drift ?? null)
-    setMaxDrift(data.maxDrift ?? null)
-    setTrades(data.trades ?? [])
-    setLoading(false)
+    try {
+      // 1. 먼저 가격 업데이트
+      const priceRes = await fetch('/api/rebalance', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'updatePrices' }),
+      })
+      const priceData = await priceRes.json()
+
+      if (priceData.updated > 0) {
+        console.log(`✅ Price updated: ${priceData.updated} symbols`)
+      }
+      if (priceData.failed?.length > 0) {
+        console.warn(`⚠️ Failed to update: ${priceData.failed.join(', ')}`)
+      }
+
+      // 2. 리밸런싱 계산
+      const res = await fetch('/api/rebalance', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'calc', weights, totalValue }),
+      })
+
+      if (!res.ok) {
+        const error = await res.json()
+        showToast(`계산 실패: ${error.error || '알 수 없는 오류'}`, 'error')
+        return
+      }
+
+      const data = await res.json()
+      setDrift(data.drift ?? null)
+      setMaxDrift(data.maxDrift ?? null)
+      setTrades(data.trades ?? [])
+
+      showToast('리밸런싱 계산 완료', 'success')
+    } catch (e) {
+      console.error('❌ Calc error:', e)
+      showToast(`계산 오류: ${(e as Error).message}`, 'error')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const executeRebalance = async () => {
+    if (!drift || !maxDrift || trades.length === 0) {
+      showToast('먼저 리밸런싱을 계산하세요', 'warning')
+      return
+    }
+
+    setExecuting(true)
+    try {
+      // 현재 비중 계산
+      const currentWeights: Record<string, number> = {}
+      for (const [sym, d] of Object.entries(drift)) {
+        currentWeights[sym] = d.current
+      }
+
+      // 리밸런싱 로그 저장
+      const res = await fetch('/api/rebalance', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'log',
+          before: currentWeights,
+          after: weights,
+          trades,
+          driftScore: maxDrift,
+        }),
+      })
+
+      if (!res.ok) {
+        const error = await res.json()
+        showToast(`실행 실패: ${error.error || '알 수 없는 오류'}`, 'error')
+        return
+      }
+
+      showToast(`리밸런싱 실행 완료 (${trades.length}건)`, 'success')
+
+      // 이력 다시 로드
+      await loadHistory()
+
+      // 결과 초기화
+      setDrift(null)
+      setMaxDrift(null)
+      setTrades([])
+    } catch (e) {
+      console.error('❌ Execute error:', e)
+      showToast(`실행 오류: ${(e as Error).message}`, 'error')
+    } finally {
+      setExecuting(false)
+    }
   }
 
   const addSymbol = () => {
@@ -83,6 +185,18 @@ export default function RebalancePage() {
   return (
     <div className="min-h-screen bg-[#0a0e1a] text-white p-4 md:p-6">
       <div className="max-w-3xl mx-auto">
+        {/* 토스트 알림 */}
+        {toast && (
+          <div className={`fixed top-4 right-4 z-50 px-4 py-3 rounded-lg shadow-lg transition-opacity ${
+            toast.type === 'success' ? 'bg-green-600' :
+            toast.type === 'error' ? 'bg-red-600' :
+            toast.type === 'warning' ? 'bg-yellow-600' :
+            'bg-blue-600'
+          }`}>
+            <p className="text-sm font-medium text-white">{toast.message}</p>
+          </div>
+        )}
+
         <div className="mb-6">
           <h1 className="text-2xl font-bold text-orange-400">포트폴리오 리밸런싱</h1>
           <p className="text-gray-500 text-sm mt-1">
@@ -180,7 +294,9 @@ export default function RebalancePage() {
 
             {drift && Object.entries(drift).length > 0 && (
               <div className="mt-3 space-y-1">
-                {Object.entries(drift).map(([sym, d]) => (
+                {Object.entries(drift)
+                  .sort((a, b) => Math.abs(b[1].diff) - Math.abs(a[1].diff))
+                  .map(([sym, d]) => (
                   <div key={sym} className="flex items-center gap-2 text-xs">
                     <span className="text-gray-400 w-12">{sym}</span>
                     <div className="flex-1 h-1.5 bg-gray-800 rounded-full overflow-hidden">
@@ -210,7 +326,7 @@ export default function RebalancePage() {
             <p className="text-orange-400 font-semibold text-sm mb-3">
               필요 거래 ({trades.length}건)
             </p>
-            <div className="space-y-2">
+            <div className="space-y-2 mb-4">
               {trades.map((t, i) => (
                 <div
                   key={i}
@@ -232,6 +348,13 @@ export default function RebalancePage() {
                 </div>
               ))}
             </div>
+            <button
+              onClick={executeRebalance}
+              disabled={executing}
+              className="w-full py-2.5 bg-orange-500 hover:bg-orange-600 disabled:opacity-40 rounded-xl font-semibold text-sm"
+            >
+              {executing ? '실행 중...' : '리밸런싱 실행'}
+            </button>
           </div>
         )}
 
