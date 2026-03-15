@@ -5,6 +5,7 @@ import {
   setStopAndTarget,
   checkStopLossAndTarget,
   getPortfolioSummary,
+  updatePricesFromYahoo,
 } from '@/lib/position-manager'
 import { getBalance } from '@/lib/kis-api'
 
@@ -16,12 +17,21 @@ export async function GET(req: NextRequest) {
     const summary = await getPortfolioSummary()
     return NextResponse.json(summary)
   }
+  if (action === 'updatePricesYahoo') {
+    try {
+      const result = await updatePricesFromYahoo()
+      return NextResponse.json(result)
+    } catch (e) {
+      return NextResponse.json({ updated: 0, failed: [], error: (e as Error).message }, { status: 500 })
+    }
+  }
   if (action === 'sync') {
     try {
       const balanceResult = await getBalance()
       if (!balanceResult.success || !balanceResult.balance) {
         return NextResponse.json({
           success: false,
+          synced: false,
           error: balanceResult.error ?? 'KIS 연동 후 사용 가능합니다'
         })
       }

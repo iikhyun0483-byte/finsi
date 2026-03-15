@@ -6,6 +6,72 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
 
+// Yahoo Finance에서 실시간 가격 조회
+async function fetchYahooPrice(symbol: string): Promise<number | null> {
+  try {
+    const res = await fetch(
+      `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?interval=1d&range=1d`
+    )
+
+    if (!res.ok) {
+      console.warn(`⚠️ Yahoo Finance price error for ${symbol}: ${res.status}`)
+      return null
+    }
+
+    const data = await res.json()
+    const price = data.chart?.result?.[0]?.meta?.regularMarketPrice ?? null
+
+    if (price !== null) {
+      console.log(`✅ ${symbol} price: $${price.toFixed(2)}`)
+    }
+
+    return price
+  } catch (e) {
+    console.warn(`⚠️ Failed to fetch price for ${symbol}:`, e)
+    return null
+  }
+}
+
+// Yahoo Finance로 가격 업데이트 (KIS 대체)
+export async function updatePricesFromYahoo(): Promise<{ updated: number; failed: string[] }> {
+  const { data: positions } = await supabase
+    .from('open_positions')
+    .select('symbol, quantity, avg_price')
+    .eq('status', 'OPEN')
+
+  if (!positions || positions.length === 0) {
+    return { updated: 0, failed: [] }
+  }
+
+  let updated = 0
+  const failed: string[] = []
+
+  for (const pos of positions) {
+    const price = await fetchYahooPrice(pos.symbol)
+
+    if (price !== null) {
+      const pnl = (price - pos.avg_price) * pos.quantity
+      const pnlPct = (price - pos.avg_price) / pos.avg_price
+
+      await supabase
+        .from('open_positions')
+        .update({
+          current_price: price,
+          unrealized_pnl: pnl,
+          unrealized_pct: pnlPct,
+          updated_at: new Date().toISOString()
+        })
+        .eq('symbol', pos.symbol)
+      updated++
+    } else {
+      failed.push(pos.symbol)
+    }
+  }
+
+  console.log(`✅ Yahoo price update: ${updated} updated, ${failed.length} failed`)
+  return { updated, failed }
+}
+
 export interface OpenPosition {
   id:            string
   symbol:        string

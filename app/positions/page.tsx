@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import type { OpenPosition } from '@/lib/position-manager'
 
 interface Summary {
@@ -17,45 +17,132 @@ export default function PositionsPage() {
   const [target,   setTarget]   = useState('')
   const [loading,  setLoading]  = useState(false)
   const [syncing,  setSyncing]  = useState(false)
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' | 'warning' } | null>(null)
 
-  const load = async () => {
-    const res = await fetch('/api/positions?action=summary')
-    const d   = await res.json()
-    setSummary(d)
-  }
+  const showToast = useCallback((message: string, type: 'success' | 'error' | 'info' | 'warning' = 'info') => {
+    setToast({ message, type })
+    setTimeout(() => setToast(null), 5000)
+  }, [])
+
+  const load = useCallback(async () => {
+    try {
+      const res = await fetch('/api/positions?action=summary')
+      if (!res.ok) {
+        console.error('❌ Failed to load positions')
+        showToast('포지션 로드 실패', 'error')
+        return
+      }
+      const d = await res.json()
+      setSummary(d)
+    } catch (e) {
+      console.error('❌ Load error:', e)
+      showToast(`로드 오류: ${(e as Error).message}`, 'error')
+    }
+  }, [showToast])
 
   const sync = async () => {
     setSyncing(true)
-    await fetch('/api/positions?action=sync')
-    await load()
-    setSyncing(false)
+    try {
+      const res = await fetch('/api/positions?action=sync')
+      const data = await res.json()
+
+      if (!res.ok || !data.synced) {
+        // KIS API 실패 시 Yahoo Finance로 대체
+        console.log('⚠️ KIS API unavailable, using Yahoo Finance')
+        showToast('Yahoo Finance로 가격 업데이트 중...', 'info')
+
+        const yahooRes = await fetch('/api/positions?action=updatePricesYahoo')
+        const yahooData = await yahooRes.json()
+
+        if (yahooData.updated > 0) {
+          showToast(`가격 업데이트 완료 (${yahooData.updated}개 종목)`, 'success')
+        } else {
+          showToast('가격 업데이트 실패', 'warning')
+        }
+      } else {
+        showToast('KIS 동기화 완료', 'success')
+      }
+
+      await load()
+    } catch (e) {
+      console.error('❌ Sync error:', e)
+      showToast(`동기화 오류: ${(e as Error).message}`, 'error')
+    } finally {
+      setSyncing(false)
+    }
   }
 
   const saveStop = async () => {
     if (!selected) return
+
+    const stop = Number(stopLoss)
+    const targetNum = Number(target)
+
+    // 입력 검증
+    if (stopLoss && (isNaN(stop) || stop <= 0)) {
+      showToast('손절가는 0보다 커야 합니다', 'warning')
+      return
+    }
+    if (target && (isNaN(targetNum) || targetNum <= selected.avgPrice)) {
+      showToast('목표가는 평균단가보다 높아야 합니다', 'warning')
+      return
+    }
+    if (stopLoss && target && stop >= targetNum) {
+      showToast('손절가는 목표가보다 낮아야 합니다', 'warning')
+      return
+    }
+
     setLoading(true)
-    await fetch('/api/positions', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        action: 'set_stop',
-        symbol: selected.symbol,
-        stopLoss:    Number(stopLoss),
-        targetPrice: Number(target),
-      }),
-    })
-    await load()
-    setSelected(null)
-    setLoading(false)
+    try {
+      const res = await fetch('/api/positions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'set_stop',
+          symbol: selected.symbol,
+          stopLoss: stop || null,
+          targetPrice: targetNum || null,
+        }),
+      })
+
+      if (!res.ok) {
+        const error = await res.json()
+        showToast(`저장 실패: ${error.error || '알 수 없는 오류'}`, 'error')
+        return
+      }
+
+      showToast('손절/목표가 설정 완료', 'success')
+      await load()
+      setSelected(null)
+      setStopLoss('')
+      setTarget('')
+    } catch (e) {
+      console.error('❌ Save error:', e)
+      showToast(`저장 오류: ${(e as Error).message}`, 'error')
+    } finally {
+      setLoading(false)
+    }
   }
 
-  useEffect(() => { load() }, [])
+  useEffect(() => { load() }, [load])
 
   const pct = (v: number) => `${v >= 0 ? '+' : ''}${(v * 100).toFixed(2)}%`
 
   return (
     <div className="min-h-screen bg-[#0a0e1a] text-white p-4 md:p-6">
       <div className="max-w-5xl mx-auto">
+        {/* 토스트 알림 */}
+        {toast && (
+          <div className={`fixed top-4 right-4 z-50 px-4 py-3 rounded-lg shadow-lg transition-opacity ${
+            toast.type === 'success' ? 'bg-green-600' :
+            toast.type === 'error' ? 'bg-red-600' :
+            toast.type === 'warning' ? 'bg-yellow-600' :
+            'bg-blue-600'
+          }`}>
+            <p className="text-sm font-medium text-white">{toast.message}</p>
+          </div>
+        )}
+
         <div className="flex justify-between items-center mb-6">
           <div>
             <div className="flex items-center gap-2">
