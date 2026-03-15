@@ -149,7 +149,9 @@ export async function GET() {
       price_krw: Math.round(signal.price * exchangeRate),
     }));
 
-    // 6. Supabase에 일괄 저장 (delete 후 insert)
+    // 6. Supabase에 일괄 저장 (upsert with UNIQUE constraint)
+    // 사전 조건: signals 테이블에 signals_symbol_unique 제약 필요
+    // SQL: ALTER TABLE signals ADD CONSTRAINT signals_symbol_unique UNIQUE (symbol);
     const signalsToSave = signalsWithKRW.map((signal) => ({
       symbol: signal.symbol,
       name: signal.name,
@@ -167,27 +169,40 @@ export async function GET() {
       high_risk: signal.highRisk,
     }));
 
-    // 기존 신호 전체 삭제 (최신 신호로 대체)
-    const { error: deleteError } = await supabase
+    // upsert: symbol 중복 시 업데이트, 없으면 insert
+    const { error: upsertError } = await supabase
       .from("signals")
-      .delete()
-      .neq("id", 0); // 전체 삭제 (id는 항상 0이 아니므로)
+      .upsert(signalsToSave, { onConflict: "symbol" });
 
-    if (deleteError) {
-      console.error("❌ Supabase 기존 신호 삭제 실패:", deleteError);
+    if (upsertError) {
+      console.error("❌ Supabase upsert 실패:", upsertError);
+
+      // Fallback: UNIQUE 제약이 없는 경우 delete 후 insert
+      console.warn("⚠️ UNIQUE 제약 없음. Fallback: delete 후 insert");
+
+      const { error: deleteError } = await supabase
+        .from("signals")
+        .delete()
+        .gte("created_at", "1970-01-01"); // 전체 삭제
+
+      if (deleteError) {
+        console.error("❌ Fallback delete 실패:", deleteError);
+        throw new Error(`DB 삭제 실패: ${deleteError.message}`);
+      }
+
+      const { error: insertError } = await supabase
+        .from("signals")
+        .insert(signalsToSave);
+
+      if (insertError) {
+        console.error("❌ Fallback insert 실패:", insertError);
+        throw new Error(`DB 저장 실패: ${insertError.message}`);
+      }
+
+      console.log(`✅ DB 저장 완료 (Fallback): ${signalsToSave.length}개 신호`);
+    } else {
+      console.log(`✅ DB 저장 완료 (Upsert): ${signalsToSave.length}개 신호`);
     }
-
-    // 새 신호 일괄 insert
-    const { error: insertError } = await supabase
-      .from("signals")
-      .insert(signalsToSave);
-
-    if (insertError) {
-      console.error("❌ Supabase insert 실패:", insertError);
-      throw new Error(`DB 저장 실패: ${insertError.message}`);
-    }
-
-    console.log(`✅ DB 저장 완료: ${signalsToSave.length}개 신호`);
 
     console.log(`✅ Enhanced 신호 생성 완료 (펀더멘털: ${signalsWithKRW.filter(s => s.fundamentals).length}개, 뉴스: ${signalsWithKRW.filter(s => s.news).length}개)`);
 
